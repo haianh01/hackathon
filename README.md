@@ -45,7 +45,70 @@ npm test
 
 # Chạy development mode
 npm run dev
+
+# Chạy giao diện test
+npm run serve
 ```
+
+## 🎮 Giao Diện Test
+
+Project bao gồm một giao diện web tương tác để test và debug bot:
+
+### 🚀 Khởi Chạy Giao Diện Test
+
+```bash
+# Khởi động server giao diện test
+npm run serve
+
+# Hoặc chạy trên port tùy chỉnh
+npx http-server public -p 8080 -o
+```
+
+Giao diện sẽ mở tự động tại `http://localhost:8080`
+
+### ✨ Tính Năng Giao Diện
+
+#### 🎮 Game Map
+- **Visualization**: Hiển thị bản đồ game realtime
+- **Interactive**: Click để refresh hoặc clear map
+- **Color-coded**: Mỗi loại ô có màu sắc riêng biệt
+  - 🟦 Player (Bot của bạn)
+  - 🟩 Bots khác
+  - ⬜ Tường bất diệt
+  - 🟧 Tường có thể phá
+  - 🟨 Power-ups
+  - 🟥 Bombs
+  - 🟪 Explosions
+
+#### 🎛️ Bot Controls  
+- **Start/Stop**: Điều khiển bot
+- **Reset**: Reset AI về trạng thái mặc định
+- **Manual Control**: Điều khiển thủ công bằng nút hoặc phím tắt
+  - ⬆️⬇️⬅️➡️: Di chuyển
+  - Spacebar: Đặt bom
+- **AI Strategies**: Điều chỉnh priority của từng chiến thuật
+
+#### 📊 Game Statistics
+- **Score**: Điểm số hiện tại
+- **Alive Bots**: Số bot còn sống
+- **Time**: Thời gian còn lại
+- **Position**: Vị trí hiện tại của bot
+
+#### 📝 Game Logs
+- **Real-time logging**: Theo dõi hoạt động của bot
+- **Color-coded**: Phân loại theo mức độ (info, success, warning, error)
+- **Auto-scroll**: Tự động cuộn xuống
+- **Export**: Xuất logs ra file
+
+#### 🧪 Test Input
+- **JSON Input**: Nhập dữ liệu game để test
+- **Sample Data**: Tải dữ liệu mẫu
+- **Live Processing**: Xử lý dữ liệu realtime
+
+### 🎯 Keyboard Shortcuts
+- `↑↓←→`: Di chuyển bot
+- `Space`: Đặt bom
+- `Ctrl+C`: Dừng server
 
 ## 📁 Cấu Trúc Project
 
