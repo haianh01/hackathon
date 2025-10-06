@@ -1,301 +1,189 @@
-# 🎮 Bomberman Bot - Zinza Hackathon 2025
+# Bomberman Bot - Hackathon 2025
 
-## 📋 Mô Tả
+Bot AI tham gia thi đấu Bomberman theo protocol Socket.IO của hackathon 2025.
 
-Bot thông minh cho cuộc thi **Zinza Hackathon 2025 - BOOM ZARENA**, được phát triển bằng TypeScript với hệ thống AI đa chiến thuật để tự động chơi game Bomberman.
+## 🚀 Cách sử dụng
 
-## ✨ Tính Năng
-
-### 🧠 AI Thông Minh
-- **Escape Strategy**: Thoát hiểm khi ở vùng nguy hiểm (Priority: 100)
-- **Attack Strategy**: Tấn công kẻ thù và phá vật cản (Priority: 80)  
-- **Defensive Strategy**: Phòng thủ và tránh xa kẻ thù (Priority: 70)
-- **Collect Strategy**: Thu thập vật phẩm có giá trị (Priority: 60)
-- **Wall Breaker Strategy**: Phá tường để tìm vật phẩm (Priority: 50)
-- **Smart Navigation Strategy**: Điều hướng thông minh với A* pathfinding (Priority: 45)
-- **Explore Strategy**: Khám phá bản đồ và tìm cơ hội (Priority: 40)
-
-### 🎯 Chiến Thuật
-- **Phân tích nguy hiểm**: Tính toán vùng nổ của bom và tìm đường thoát
-- **Tấn công thông minh**: Đánh giá điểm số trước khi đặt bom
-- **Thu thập tối ưu**: Ưu tiên vật phẩm theo giá trị và khoảng cách
-- **Khám phá chiến thuật**: Di chuyển về trung tâm và tránh kẻ thù
-
-### 🛠️ Kỹ Thuật
-- **TypeScript**: Type-safe và maintainable
-- **Modular Design**: Dễ mở rộng và tùy chỉnh
-- **Unit Testing**: Test coverage với Jest
-- **Error Handling**: Xử lý lỗi robust
-
-## 🚀 Cài Đặt
+### 1. Chuẩn bị môi trường
 
 ```bash
-# Clone repository
-git clone <repository-url>
-cd bomberman-bot
-
-# Cài đặt dependencies
+# Install dependencies
 npm install
 
 # Build project
 npm run build
-
-# Chạy tests
-npm test
-
-# Chạy development mode
-npm run dev
-
-# Chạy giao diện test
-npm run serve
 ```
 
-## 🎮 Giao Diện Test
+### 2. Cấu hình
 
-Project bao gồm một giao diện web tương tác để test và debug bot:
+File `.env` đã được cấu hình sẵn với servers test:
 
-### 🚀 Khởi Chạy Giao Diện Test
+```env
+# Test Server Options (choose one)
+SOCKET_SERVER=https://zarena-dev4.zinza.com.vn
+
+# Bot authentication token  
+BOT_TOKEN=s9vq3n7y
+
+# Basic auth for test servers
+BASIC_AUTH_USER=hackathon2025
+BASIC_AUTH_PASS=hackathon@2025#
+```
+
+**Servers test có sẵn:**
+- Server #1: `https://zarena-dev1.zinza.com.vn` (Client: https://zarena1.zinza.com.vn)
+- Server #2: `https://zarena-dev2.zinza.com.vn` (Client: https://zarena2.zinza.com.vn)  
+- Server #3: `https://zarena-dev3.zinza.com.vn` (Client: https://zarena3.zinza.com.vn)
+- Server #4: `https://zarena-dev4.zinza.com.vn` (Client: https://zarena4.zinza.com.vn)
+
+### 3. Chạy bot
 
 ```bash
-# Khởi động server giao diện test
-npm run serve
+# Development mode
+npm run dev
 
-# Hoặc chạy trên port tùy chỉnh
-npx http-server public -p 8080 -o
+# Production mode
+npm start
+
+# Test multiple servers
+./test-servers.sh
 ```
 
-Giao diện sẽ mở tự động tại `http://localhost:8080`
+### 4. Docker (Môi trường thi đấu)
+npm run dev
 
-### ✨ Tính Năng Giao Diện
+# Production mode
+npm start
+```
 
-#### 🎮 Game Map
-- **Visualization**: Hiển thị bản đồ game realtime
-- **Interactive**: Click để refresh hoặc clear map
-- **Color-coded**: Mỗi loại ô có màu sắc riêng biệt
-  - 🟦 Player (Bot của bạn)
-  - 🟩 Bots khác
-  - ⬜ Tường bất diệt
-  - 🟧 Tường có thể phá
-  - 🟨 Power-ups
-  - 🟥 Bombs
-  - 🟪 Explosions
+### 4. Docker (Môi trường thi đấu)
 
-#### 🎛️ Bot Controls  
-- **Start/Stop**: Điều khiển bot
-- **Reset**: Reset AI về trạng thái mặc định
-- **Manual Control**: Điều khiển thủ công bằng nút hoặc phím tắt
-  - ⬆️⬇️⬅️➡️: Di chuyển
-  - Spacebar: Đặt bom
-- **AI Strategies**: Điều chỉnh priority của từng chiến thuật
+```bash
+# Build image
+docker build -t bomberman-bot .
 
-#### 📊 Game Statistics
-- **Score**: Điểm số hiện tại
-- **Alive Bots**: Số bot còn sống
-- **Time**: Thời gian còn lại
-- **Position**: Vị trí hiện tại của bot
+# Run with docker-compose
+docker compose up bot
+```
 
-#### 📝 Game Logs
-- **Real-time logging**: Theo dõi hoạt động của bot
-- **Color-coded**: Phân loại theo mức độ (info, success, warning, error)
-- **Auto-scroll**: Tự động cuộn xuống
-- **Export**: Xuất logs ra file
+## 📋 Protocol theo Hackathon 2025
 
-#### 🧪 Test Input
-- **JSON Input**: Nhập dữ liệu game để test
-- **Sample Data**: Tải dữ liệu mẫu
-- **Live Processing**: Xử lý dữ liệu realtime
+Bot được thiết kế theo đúng protocol Socket.IO như yêu cầu:
 
-### 🎯 Keyboard Shortcuts
-- `↑↓←→`: Di chuyển bot
-- `Space`: Đặt bom
-- `Ctrl+C`: Dừng server
+### Sự kiện gửi từ Bot:
+- **join**: Tham gia phòng chơi
+- **move**: Di chuyển (orient: UP/DOWN/LEFT/RIGHT)
+- **place_bomb**: Đặt bom
 
-## 📁 Cấu Trúc Project
+### Sự kiện nhận từ Server:
+- **user**: Thông tin phòng chơi khi tham gia
+- **start**: Bắt đầu game (môi trường thi đấu)
+- **player_move**: Bot di chuyển
+- **new_bomb**: Bom mới được đặt
+- **bomb_explode**: Bom phát nổ
+- **map_update**: Cập nhật map
+- **user_die_update**: Bot bị hạ gục
+- **new_life**: Bot hồi sinh (môi trường luyện tập)
+- **chest_destroyed**: Hòm đồ bị phá
+- **item_collected**: Item được thu thập
+- **user_disconnect**: Bot thoát
+- **finish**: Kết thúc game (môi trường thi đấu)
+
+## 🧠 AI Strategies
+
+Bot sử dụng hệ thống multi-strategy với priority:
+
+1. **EscapeStrategy** (Priority: 100) - Thoát khỏi nguy hiểm
+2. **AttackStrategy** (Priority: 80) - Tấn công đối thủ
+3. **DefensiveStrategy** (Priority: 70) - Phòng thủ
+4. **CollectStrategy** (Priority: 60) - Thu thập items
+5. **WallBreakerStrategy** (Priority: 50) - Phá tường
+6. **ExploreStrategy** (Priority: 40) - Khám phá bản đồ
+7. **SmartNavigationStrategy** (Priority: 30) - Di chuyển thông minh
+
+## 🔧 Cấu trúc dự án
 
 ```
 src/
-├── types/           # Type definitions
-│   ├── game.ts     # Game entities & states
-│   └── index.ts    # Export types
-├── utils/          # Utility functions
-│   ├── position.ts # Position calculations
-│   ├── gameLogic.ts# Game logic helpers
-│   └── index.ts    # Export utils
-├── strategies/     # AI Strategies
-│   ├── baseStrategy.ts     # Base strategy class
-│   ├── escapeStrategy.ts   # Escape from danger
-│   ├── attackStrategy.ts   # Attack enemies
-│   ├── collectStrategy.ts  # Collect items
-│   ├── exploreStrategy.ts  # Explore map
-│   └── index.ts           # Export strategies
-├── ai/             # AI Engine
-│   ├── bombermanAI.ts     # Main AI controller
-│   └── index.ts           # Export AI
-├── game/           # Game Engine
-│   ├── gameEngine.ts      # Game state management
-│   └── index.ts           # Export game
-├── __tests__/      # Unit tests
-│   ├── position.test.ts
-│   ├── bombermanAI.test.ts
-│   ├── gameEngine.test.ts
-│   └── strategies.test.ts
-├── bombermanBot.ts # Main Bot class
-└── index.ts        # Entry point
+├── bombermanBot.ts          # Main bot class với Socket.IO
+├── index.ts                 # Entry point
+├── ai/                      # AI engine
+├── game/                    # Game state management
+├── strategies/              # AI strategies
+├── types/                   # TypeScript types (cập nhật theo protocol)
+└── utils/                   # Utilities
 ```
 
-## 🎮 Cách Sử Dụng
+## 📦 Docker Configuration
 
-### Cơ Bản
+Dockerfile được tối ưu cho môi trường thi đấu:
 
-```typescript
-import { BombermanBot } from './src';
+```dockerfile
+# Multi-stage build
+FROM node:20-alpine AS builder
+# ... build stage
 
-// Tạo bot instance
-const bot = new BombermanBot();
-
-// Khởi tạo
-bot.initialize();
-
-// Xử lý data từ game server
-const gameData = {
-  map: { /* map data */ },
-  bots: [ /* bot data */ ],
-  currentBotId: 'your-bot-id',
-  timeRemaining: 300000
-};
-
-const action = bot.processGameData(gameData);
-console.log(action); // "MOVE:RIGHT" hoặc "BOMB" hoặc "STOP"
+FROM node:20-alpine
+# ... production stage
+CMD ["node", "dist/index.js"]
 ```
 
-### Tùy Chỉnh AI
+## 🎮 Game Features
 
-```typescript
-// Lấy thông tin strategies
-const strategies = bot.getAIInfo();
-console.log(strategies);
+- **Socket.IO Authentication**: Authenticate với token
+- **Real-time Events**: Xử lý events real-time từ server
+- **Smart AI**: Hệ thống AI đa chiến lược
+- **Map Processing**: Xử lý map 2D array theo protocol
+- **Item Management**: Thu thập và quản lý items (S/R/B)
+- **Bomb Strategy**: Đặt bom thông minh
+- **Safety Checks**: Kiểm tra an toàn khi di chuyển
 
-// Cập nhật priority
-bot.updateStrategyPriority('Attack', 90);
-
-// Reset về mặc định
-bot.resetAI();
-```
-
-## 🧪 Testing
+## 🔬 Development
 
 ```bash
-# Chạy tất cả tests
+# Development with auto-reload
+npm run dev
+
+# Run tests
 npm test
-
-# Chạy với coverage
-npm run test:coverage
-
-# Chạy watch mode
-npm run test:watch
 
 # Lint code
 npm run lint
-npm run lint:fix
 ```
 
-## 📊 Game Logic
+## 📝 Logs
 
-### Tính Điểm
-- **Hạ gục đối thủ**: 1000 điểm/mạng
-- **Nhặt vật phẩm**: 10 điểm/vật phẩm
-- **Phá tường**: 50 điểm (internal scoring)
+Bot sẽ log các thông tin quan trọng:
 
-### Vật Phẩm
-- **Giày Speed**: Tăng tốc độ (max 3)
-- **Liệt Hỏa**: Tăng phạm vi nổ bom
-- **Đa Bom**: Tăng số lượng bom đặt được
-
-### Bản Đồ
-- **Kích thước**: 640x640
-- **Bom**: Nổ sau 5 giây, phạm vi mặc định 2
-- **Bot**: Tốc độ 1/2/3, 1 mạng sống
-
-## 🔧 Cấu Hình
-
-### TypeScript Config
-```json
-{
-  "compilerOptions": {
-    "target": "ES2020",
-    "module": "commonjs",
-    "strict": true,
-    "esModuleInterop": true
-  }
-}
+```
+🎮 Bomberman Bot - Zinza Hackathon 2025
+🚀 Khởi động bot...
+🔌 Socket connected
+📝 Đã gửi yêu cầu tham gia phòng chơi
+📥 Nhận thông tin phòng chơi
+🤖 Bot của chúng ta: BOT_NAME (uid)
+🎯 Quyết định: MOVE UP - Tìm kiếm vật phẩm
 ```
 
-### Jest Config
-```javascript
-module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  collectCoverageFrom: ['src/**/*.ts']
-};
-```
+## ⚠️ Lưu ý quan trọng
 
-## 🚀 Deployment
+1. **Môi trường thi đấu**: Bot chỉ di chuyển sau khi nhận event `start`
+2. **Authentication**: Cần BOT_TOKEN hợp lệ từ BTC
+3. **Map coordinates**: Sử dụng tọa độ pixel (x, y)
+4. **Item types**: S (Speed), R (Range), B (Bomb Count)
+5. **Socket events**: Tất cả communication qua Socket.IO
 
-```bash
-# Build production
-npm run build
+## 🏆 Chiến thuật
 
-# Chạy built version
-npm start
+Bot được thiết kế với các chiến thuật thông minh:
 
-# Hoặc chạy trực tiếp TypeScript
-npm run dev
-```
-
-## 🤝 Đóng Góp
-
-1. Fork repository
-2. Tạo feature branch (`git checkout -b feature/amazing-strategy`)
-3. Commit changes (`git commit -m 'Add amazing strategy'`)
-4. Push to branch (`git push origin feature/amazing-strategy`)
-5. Tạo Pull Request
-
-## 📈 Performance Tips
-
-- **Escape Priority**: Luôn ưu tiên thoát hiểm trước
-- **Bomb Timing**: Đảm bảo có đường thoát trước khi đặt bom
-- **Item Value**: Ưu tiên Speed > Flame > Bomb items
-- **Map Control**: Điều khiển trung tâm bản đồ
-
-## 🐛 Troubleshooting
-
-### Lỗi TypeScript
-```bash
-npm run build  # Kiểm tra compile errors
-```
-
-### Lỗi Tests
-```bash
-npm run test:watch  # Debug tests interactively
-```
-
-### Performance Issues
-- Kiểm tra game state parsing
-- Optimize strategy evaluation
-- Monitor memory usage
-
-## 📝 License
-
-MIT License - Zinza Hackathon 2025
-
-## 👥 Team
-
-Phát triển bởi đội thi Zinza Hackathon 2025
+- **Escape**: Ưu tiên thoát khỏi vùng nguy hiểm
+- **Attack**: Tấn công khi có cơ hội
+- **Collect**: Thu thập items để tăng sức mạnh  
+- **Explore**: Khám phá map hiệu quả
+- **Defense**: Phòng thủ khi cần thiết
 
 ---
 
-🎯 **Mục tiêu**: Trở thành Bot Bomberman thông minh nhất cuộc thi!
-
-💪 **Chiến thuật**: Sống sót, thu thập, tấn công, và chiến thắng!
-
-🏆 **Slogan**: "BOOM ZARENA - Where Intelligence Meets Explosion!"
+**Team**: Zinza Hackathon 2025  
+**Version**: 2.0.0 (Updated for Socket.IO protocol)

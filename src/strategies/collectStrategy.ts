@@ -82,15 +82,15 @@ export class CollectStrategy extends BaseStrategy {
 
     switch (itemType) {
       case ItemType.SPEED:
-        // Giày speed có giá trị cao nếu tốc độ chưa đạt tối đa
+        // Item tăng tốc độ có giá trị cao nếu tốc độ chưa đạt tối đa
         return bot.speed < 3 ? 100 : 20;
 
-      case ItemType.FLAME:
-        // Liệt hỏa luôn có giá trị
+      case ItemType.EXPLOSION_RANGE:
+        // Item tăng phạm vi nổ luôn có giá trị
         return 80;
 
-      case ItemType.BOMB:
-        // Đa bom có giá trị nếu chưa có nhiều bom
+      case ItemType.BOMB_COUNT:
+        // Item tăng số lượng bom có giá trị nếu chưa có nhiều bom
         return bot.bombCount < 3 ? 90 : 30;
 
       default:
