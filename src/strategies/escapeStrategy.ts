@@ -1,6 +1,11 @@
 import { BaseStrategy } from "./baseStrategy";
 import { GameState, BotDecision, BotAction, Direction } from "../types";
 import {
+  getPositionInDirection,
+  canMoveTo,
+  getDirectionToTarget,
+} from "../utils";
+import {
   isPositionSafe,
   getSafeAdjacentPositions,
   isPositionInDangerZone,
@@ -18,6 +23,9 @@ export class EscapeStrategy extends BaseStrategy {
 
     // Kiểm tra xem có đang ở vùng nguy hiểm không
     if (!isPositionInDangerZone(currentPos, gameState)) {
+      console.log(
+        `🛡️ EscapeStrategy: Không ở vùng nguy hiểm (${gameState.map.bombs.length} bom trên map)`
+      );
       return null;
     }
 
@@ -34,8 +42,8 @@ export class EscapeStrategy extends BaseStrategy {
       ];
 
       for (const direction of directions) {
-        const newPos = this.getPositionInDirection(currentPos, direction);
-        if (this.canMoveTo(newPos, gameState)) {
+        const newPos = getPositionInDirection(currentPos, direction);
+        if (canMoveTo(newPos, gameState)) {
           return this.createDecision(
             BotAction.MOVE,
             this.priority,
@@ -56,7 +64,7 @@ export class EscapeStrategy extends BaseStrategy {
 
     // Chọn vị trí an toàn đầu tiên
     const targetPos = safePositions[0]!;
-    const direction = this.getDirectionToTarget(currentPos, targetPos);
+    const direction = getDirectionToTarget(currentPos, targetPos);
 
     return this.createDecision(
       BotAction.MOVE,
@@ -65,61 +73,5 @@ export class EscapeStrategy extends BaseStrategy {
       direction,
       targetPos
     );
-  }
-
-  private getPositionInDirection(position: any, direction: Direction): any {
-    const newPos = { ...position };
-
-    switch (direction) {
-      case Direction.UP:
-        newPos.y -= 1;
-        break;
-      case Direction.DOWN:
-        newPos.y += 1;
-        break;
-      case Direction.LEFT:
-        newPos.x -= 1;
-        break;
-      case Direction.RIGHT:
-        newPos.x += 1;
-        break;
-    }
-
-    return newPos;
-  }
-
-  private canMoveTo(position: any, gameState: GameState): boolean {
-    // Kiểm tra nằm trong bản đồ
-    if (
-      position.x < 0 ||
-      position.x >= gameState.map.width ||
-      position.y < 0 ||
-      position.y >= gameState.map.height
-    ) {
-      return false;
-    }
-
-    // Kiểm tra không bị tường chặn
-    if (
-      gameState.map.walls.some(
-        (wall) =>
-          wall.position.x === position.x && wall.position.y === position.y
-      )
-    ) {
-      return false;
-    }
-
-    return true;
-  }
-
-  private getDirectionToTarget(from: any, to: any): Direction {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-
-    if (Math.abs(dx) > Math.abs(dy)) {
-      return dx > 0 ? Direction.RIGHT : Direction.LEFT;
-    } else {
-      return dy > 0 ? Direction.DOWN : Direction.UP;
-    }
   }
 }

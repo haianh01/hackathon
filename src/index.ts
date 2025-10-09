@@ -1,61 +1,77 @@
-import { BombermanBot } from "./bombermanBot";
+import dotenv from "dotenv";
+import { BomberManBot } from "./bombermanBot";
+import { SocketConnection } from "./connection/socketConnection";
+
+// Load environment variables
+dotenv.config();
 
 /**
  * Entry point của ứng dụng
  */
 
-// Tạo instance bot
-const bot = new BombermanBot();
-
-// Khởi tạo bot
-bot.initialize();
-
 // Export để sử dụng ở nơi khác
-export { BombermanBot };
+export { BomberManBot };
+export { SocketConnection };
 export * from "./types";
 export * from "./ai";
 export * from "./game";
 export * from "./strategies";
 export * from "./utils";
 
-// Example usage
-if (require.main === module) {
+/**
+ * Main function - Khởi chạy bot với Socket.IO
+ */
+async function main() {
   console.log("🎮 Bomberman Bot - Zinza Hackathon 2025");
-  console.log("📋 AI Strategies:");
+  console.log("=".repeat(50));
 
-  const strategies = bot.getAIInfo();
-  strategies.forEach((strategy) => {
-    console.log(`  - ${strategy.name}: Priority ${strategy.priority}`);
-  });
+  // Lấy cấu hình từ environment variables
+  const serverAddress =
+    process.env.SOCKET_SERVER || "https://zarena-dev4.zinza.com.vn";
+  const botToken = process.env.BOT_TOKEN || "";
 
-  // Example game data processing
-  const exampleGameData = {
-    map: {
-      width: 640,
-      height: 640,
-      walls: [
-        { x: 40, y: 40, destructible: false },
-        { x: 80, y: 40, destructible: true },
-      ],
-      items: [{ id: "1", x: 120, y: 80, type: "SPEED" }],
-      bombs: [],
-      bots: [
-        {
-          id: "bot1",
-          x: 0,
-          y: 0,
-          speed: 1,
-          bombCount: 1,
-          flameRange: 2,
-          isAlive: true,
-          score: 0,
-        },
-      ],
-    },
-    currentBotId: "bot1",
-    timeRemaining: 300000,
-    round: 1,
+  if (!botToken) {
+    console.error("❌ Lỗi: Chưa cấu hình BOT_TOKEN trong file .env");
+    process.exit(1);
+  }
+
+  console.log(`🌐 Server: ${serverAddress}`);
+  console.log(`🔑 Token: ${botToken.substring(0, 10)}...`);
+  console.log("=".repeat(50));
+
+  const bot = new BomberManBot(serverAddress, botToken);
+
+  // Xử lý tắt chương trình gracefully
+  const shutdown = () => {
+    console.log("\n🛑 Đang tắt bot...");
+    bot.shutdown();
+    process.exit(0);
   };
 
-  console.log("🎯 Example decision:", bot.processGameData(exampleGameData));
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
+  try {
+    // Khởi tạo và kết nối bot
+    await bot.initialize();
+
+    console.log("✅ Bot đã sẵn sàng!1");
+    console.log("📋 AI Strategies:");
+
+    const strategies = bot.getAIInfo();
+    strategies.forEach((strategy) => {
+      console.log(`  - ${strategy.name}: Priority ${strategy.priority}`);
+    });
+  } catch (error) {
+    console.error("❌ Lỗi khởi tạo bot:", error);
+    process.exit(1);
+  }
+}
+
+// Chạy bot nếu file được execute trực tiếp
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("❌ Lỗi không mong đợi:", error);
+    process.exit(1);
+  });
 }

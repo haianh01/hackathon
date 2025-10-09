@@ -42,14 +42,29 @@ BASIC_AUTH_PASS=hackathon@2025#
 # Development mode
 npm run dev
 
-# Production mode
-npm start
+# Production mode với Socket.IO
+npm run build
+npm run start:socketio
+
+# Development mode với Socket.IO
+npm run dev:socketio
 
 # Test multiple servers
 ./test-servers.sh
 ```
 
-### 4. Docker (Môi trường thi đấu)
+### 4. Socket.IO Integration
+
+Bot đã được tích hợp đầy đủ với Socket.IO để kết nối trực tiếp với server game:
+
+- **Kết nối tự động**: Tự động kết nối và tham gia phòng game
+- **Real-time events**: Xử lý tất cả events từ server (game start/end, player moves, bombs, etc.)
+- **AI-driven actions**: AI tự động đưa ra quyết định và gửi actions lên server
+- **Graceful shutdown**: Xử lý ngắt kết nối an toàn
+
+Chi tiết xem [Socket.IO Integration Guide](./SOCKETIO_GUIDE.md)
+
+### 5. Docker (Môi trường thi đấu)
 npm run dev
 
 # Production mode

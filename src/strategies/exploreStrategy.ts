@@ -1,6 +1,6 @@
 import { BaseStrategy } from "./baseStrategy";
 import { GameState, BotDecision, BotAction, Direction } from "../types";
-import { isPositionSafe, canMoveTo } from "../utils";
+import { isPositionSafe, canMoveTo, getPositionInDirection } from "../utils";
 
 /**
  * Chiến thuật khám phá - di chuyển đến vùng chưa khám phá
@@ -23,7 +23,7 @@ export class ExploreStrategy extends BaseStrategy {
     let bestScore = -1;
 
     for (const direction of directions) {
-      const nextPos = this.getPositionInDirection(currentPos, direction);
+      const nextPos = getPositionInDirection(currentPos, direction);
 
       if (
         !canMoveTo(nextPos, gameState) ||
@@ -144,26 +144,5 @@ export class ExploreStrategy extends BaseStrategy {
     }
 
     return count;
-  }
-
-  private getPositionInDirection(position: any, direction: Direction): any {
-    const newPos = { ...position };
-
-    switch (direction) {
-      case Direction.UP:
-        newPos.y -= 1;
-        break;
-      case Direction.DOWN:
-        newPos.y += 1;
-        break;
-      case Direction.LEFT:
-        newPos.x -= 1;
-        break;
-      case Direction.RIGHT:
-        newPos.x += 1;
-        break;
-    }
-
-    return newPos;
   }
 }

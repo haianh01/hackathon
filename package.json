@@ -6,8 +6,11 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:socketio": "node examples/socketio-bot.js",
+    "demo:join": "node examples/demo-join-event.js",
     "server": "node dist/server.js",
     "dev": "ts-node src/index.ts",
+    "dev:socketio": "npm run build && node examples/socketio-bot.js",
     "dev:server": "nodemon --watch src --ext ts --exec \"npm run build && node dist/server.js\"",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -30,7 +33,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0",
-    "@types/socket.io-client": "^1.4.35",
+    "@types/socket.io-client": "^1.4.36",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "concurrently": "^8.2.2",
@@ -44,10 +47,13 @@
   "dependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "@types/socket.io": "^3.0.2",
     "@types/ws": "^8.5.0",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "nodemon": "^3.1.10",
+    "socket.io": "^4.8.1",
     "socket.io-client": "^4.7.2",
     "ws": "^8.14.0"
   }

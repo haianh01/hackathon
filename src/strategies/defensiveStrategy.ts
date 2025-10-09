@@ -1,26 +1,32 @@
-import { BaseStrategy } from './baseStrategy';
-import { GameState, BotDecision, BotAction, Direction } from '../types';
-import { manhattanDistance, isPositionSafe, canMoveTo } from '../utils';
+import { BaseStrategy } from "./baseStrategy";
+import { GameState, BotDecision, BotAction, Direction } from "../types";
+import {
+  manhattanDistance,
+  isPositionSafe,
+  canMoveTo,
+  getPositionInDirection,
+} from "../utils";
 
 /**
  * Chiến thuật phòng thủ - tránh xa kẻ thù và bom
  */
 export class DefensiveStrategy extends BaseStrategy {
-  name = 'Defensive';
+  name = "Defensive";
   priority = 70;
 
   evaluate(gameState: GameState): BotDecision | null {
     const currentPos = gameState.currentBot.position;
-    const enemies = gameState.enemies.filter(enemy => enemy.isAlive);
-    
+    const enemies = gameState.enemies.filter((enemy) => enemy.isAlive);
+
     if (enemies.length === 0) {
+      console.log(`🛡️ DefensiveStrategy: Không có enemy`);
       return null;
     }
 
     // Tìm kẻ thù gần nhất
     let nearestEnemy = null;
     let nearestDistance = Infinity;
-    
+
     for (const enemy of enemies) {
       const distance = manhattanDistance(currentPos, enemy.position);
       if (distance < nearestDistance) {
@@ -31,8 +37,12 @@ export class DefensiveStrategy extends BaseStrategy {
 
     // Nếu kẻ thù quá gần (dưới 3 ô), tìm cách tránh xa
     if (nearestEnemy && nearestDistance < 4) {
-      const escapeDirection = this.findEscapeDirection(currentPos, nearestEnemy.position, gameState);
-      
+      const escapeDirection = this.findEscapeDirection(
+        currentPos,
+        nearestEnemy.position,
+        gameState
+      );
+
       if (escapeDirection) {
         return this.createDecision(
           BotAction.MOVE,
@@ -49,20 +59,29 @@ export class DefensiveStrategy extends BaseStrategy {
   /**
    * Tìm hướng thoát khỏi kẻ thù
    */
-  private findEscapeDirection(currentPos: any, enemyPos: any, gameState: GameState): Direction | null {
-    const directions = [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT];
+  private findEscapeDirection(
+    currentPos: any,
+    enemyPos: any,
+    gameState: GameState
+  ): Direction | null {
+    const directions = [
+      Direction.UP,
+      Direction.DOWN,
+      Direction.LEFT,
+      Direction.RIGHT,
+    ];
     let bestDirection = null;
     let maxDistance = -1;
 
     for (const direction of directions) {
-      const newPos = this.getPositionInDirection(currentPos, direction);
-      
+      const newPos = getPositionInDirection(currentPos, direction);
+
       if (!canMoveTo(newPos, gameState) || !isPositionSafe(newPos, gameState)) {
         continue;
       }
 
       const distanceFromEnemy = manhattanDistance(newPos, enemyPos);
-      
+
       if (distanceFromEnemy > maxDistance) {
         maxDistance = distanceFromEnemy;
         bestDirection = direction;
@@ -70,26 +89,5 @@ export class DefensiveStrategy extends BaseStrategy {
     }
 
     return bestDirection;
-  }
-
-  private getPositionInDirection(position: any, direction: Direction): any {
-    const newPos = { ...position };
-    
-    switch (direction) {
-      case Direction.UP:
-        newPos.y -= 1;
-        break;
-      case Direction.DOWN:
-        newPos.y += 1;
-        break;
-      case Direction.LEFT:
-        newPos.x -= 1;
-        break;
-      case Direction.RIGHT:
-        newPos.x += 1;
-        break;
-    }
-    
-    return newPos;
   }
 }

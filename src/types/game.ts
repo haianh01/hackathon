@@ -114,6 +114,7 @@ export interface Bot {
   flameRange: number;
   isAlive: boolean;
   score: number;
+  name?: string;
 }
 
 export interface Bomb {

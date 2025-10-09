@@ -29,7 +29,7 @@ export function positionsEqual(pos1: Position, pos2: Position): boolean {
 export function getPositionInDirection(
   position: Position,
   direction: Direction,
-  steps: number = 1
+  steps: number = 40 // Each cell is 40x40 pixels
 ): Position {
   const newPos = { ...position };
 
@@ -51,6 +51,18 @@ export function getPositionInDirection(
   }
 
   return newPos;
+}
+
+/**
+ * Lấy vị trí mới sau khi di chuyển theo hướng với bước nhỏ (3px)
+ * Dùng cho prediction
+ */
+export function getPositionInDirectionSmallStep(
+  position: Position,
+  direction: Direction,
+  steps: number = 3 // Server moves 3px per step
+): Position {
+  return getPositionInDirection(position, direction, steps);
 }
 
 /**

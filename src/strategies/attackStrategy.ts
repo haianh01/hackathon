@@ -1,5 +1,6 @@
 import { BaseStrategy } from "./baseStrategy";
 import { GameState, BotDecision, BotAction, Direction } from "../types";
+import { getPositionInDirection, canMoveTo } from "../utils";
 import {
   calculateBombScore,
   isPositionSafe,
@@ -18,6 +19,9 @@ export class AttackStrategy extends BaseStrategy {
 
     // Kiểm tra xem có thể đặt bom không
     if (gameState.currentBot.bombCount <= 0) {
+      console.log(
+        `💣 AttackStrategy: Không có bom (bombCount: ${gameState.currentBot.bombCount})`
+      );
       return null;
     }
 
@@ -26,6 +30,9 @@ export class AttackStrategy extends BaseStrategy {
 
     // Chỉ đặt bom nếu có khả năng hạ gục kẻ thù hoặc phá được nhiều vật
     if (bombScore < 100) {
+      console.log(
+        `💣 AttackStrategy: Điểm bom quá thấp (score: ${bombScore}, cần >= 100)`
+      );
       return null;
     }
 
@@ -76,10 +83,10 @@ export class AttackStrategy extends BaseStrategy {
 
       // Thử di chuyển tối đa 3 bước (dựa trên tốc độ tối đa)
       for (let step = 1; step <= 3; step++) {
-        currentPos = this.getPositionInDirection(currentPos, direction);
+        currentPos = getPositionInDirection(currentPos, direction);
 
         // Kiểm tra có thể di chuyển đến vị trí này không
-        if (!this.canMoveTo(currentPos, gameState)) {
+        if (!canMoveTo(currentPos, gameState)) {
           break;
         }
 
@@ -91,50 +98,5 @@ export class AttackStrategy extends BaseStrategy {
     }
 
     return false;
-  }
-
-  private getPositionInDirection(position: any, direction: Direction): any {
-    const newPos = { ...position };
-
-    switch (direction) {
-      case Direction.UP:
-        newPos.y -= 1;
-        break;
-      case Direction.DOWN:
-        newPos.y += 1;
-        break;
-      case Direction.LEFT:
-        newPos.x -= 1;
-        break;
-      case Direction.RIGHT:
-        newPos.x += 1;
-        break;
-    }
-
-    return newPos;
-  }
-
-  private canMoveTo(position: any, gameState: GameState): boolean {
-    // Kiểm tra nằm trong bản đồ
-    if (
-      position.x < 0 ||
-      position.x >= gameState.map.width ||
-      position.y < 0 ||
-      position.y >= gameState.map.height
-    ) {
-      return false;
-    }
-
-    // Kiểm tra không bị tường chặn
-    if (
-      gameState.map.walls.some(
-        (wall) =>
-          wall.position.x === position.x && wall.position.y === position.y
-      )
-    ) {
-      return false;
-    }
-
-    return true;
   }
 }

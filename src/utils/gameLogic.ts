@@ -200,3 +200,64 @@ export function calculateBombScore(
 
   return score;
 }
+
+/**
+ * Kiểm tra xem vị trí có va chạm với tường hoặc rương không
+ * Dùng cho pixel-level collision detection
+ */
+export function isPositionCollidingWithWalls(
+  position: Position,
+  gameState: GameState,
+  botSize: number = 30 // Default bot size
+): boolean {
+  // Kiểm tra va chạm với mỗi tường/rương
+  for (const wall of gameState.map.walls) {
+    if (checkBoxCollision(position, botSize, wall.position, 40)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Kiểm tra va chạm giữa 2 hình chữ nhật (box collision)
+ */
+function checkBoxCollision(
+  pos1: Position,
+  size1: number,
+  pos2: Position,
+  size2: number
+): boolean {
+  return (
+    pos1.x < pos2.x + size2 &&
+    pos1.x + size1 > pos2.x &&
+    pos1.y < pos2.y + size2 &&
+    pos1.y + size1 > pos2.y
+  );
+}
+
+/**
+ * Kiểm tra xem có thể di chuyển đến vị trí predicted không
+ * (với pixel-level precision)
+ */
+export function canMoveToPositionPrecise(
+  position: Position,
+  gameState: GameState
+): boolean {
+  // Kiểm tra nằm trong bản đồ
+  if (
+    position.x < 0 ||
+    position.x >= gameState.map.width ||
+    position.y < 0 ||
+    position.y >= gameState.map.height
+  ) {
+    return false;
+  }
+
+  // Kiểm tra không va chạm với tường
+  if (isPositionCollidingWithWalls(position, gameState)) {
+    return false;
+  }
+
+  return true;
+}

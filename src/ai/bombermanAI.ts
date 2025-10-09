@@ -8,6 +8,7 @@ import {
   DefensiveStrategy,
   WallBreakerStrategy,
   SmartNavigationStrategy,
+  BombStrategy,
 } from "../strategies";
 
 /**
@@ -20,6 +21,7 @@ export class BombermanAI {
     // Khởi tạo tất cả các strategies theo thứ tự ưu tiên
     this.strategies = [
       new EscapeStrategy(), // Ưu tiên cao nhất - thoát hiểm
+      new BombStrategy(), // Đặt bom thông minh
       new AttackStrategy(), // Tấn công kẻ thù
       new DefensiveStrategy(), // Phòng thủ
       new CollectStrategy(), // Thu thập vật phẩm
@@ -37,8 +39,18 @@ export class BombermanAI {
 
     // Lấy quyết định từ tất cả strategies
     for (const strategy of this.strategies) {
+      console.log(
+        "%c🤪 ~ file: bombermanAI.ts:39 [] -> strategy : ",
+        "color: #4b2b6a",
+        strategy
+      );
       try {
         const decision = strategy.evaluate(gameState);
+        console.log(
+          "%c🤪 ~ file: bombermanAI.ts:41 [] -> decision : ",
+          "color: #22e856",
+          decision
+        );
         if (decision) {
           decisions.push(decision);
         }

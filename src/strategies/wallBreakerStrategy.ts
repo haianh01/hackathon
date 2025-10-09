@@ -1,35 +1,41 @@
-import { BaseStrategy } from './baseStrategy';
-import { GameState, BotDecision, BotAction } from '../types';
-import { calculateBombScore, isPositionSafe } from '../utils';
+import { BaseStrategy } from "./baseStrategy";
+import { GameState, BotDecision, BotAction } from "../types";
+import { calculateBombScore, isPositionSafe } from "../utils";
 
 /**
  * Chiến thuật phá tường - tìm và phá các tường có thể phá để tìm vật phẩm
  */
 export class WallBreakerStrategy extends BaseStrategy {
-  name = 'WallBreaker';
+  name = "WallBreaker";
   priority = 50;
 
   evaluate(gameState: GameState): BotDecision | null {
     const currentPos = gameState.currentBot.position;
-    
+
     // Kiểm tra xem có thể đặt bom không
     if (gameState.currentBot.bombCount <= 0) {
+      console.log(
+        `🧱 WallBreakerStrategy: Không có bom (bombCount: ${gameState.currentBot.bombCount})`
+      );
       return null;
     }
 
     // Tìm tường có thể phá gần vị trí hiện tại
-    const destructibleWalls = gameState.map.walls.filter(wall => wall.isDestructible);
-    
+    const destructibleWalls = gameState.map.walls.filter(
+      (wall) => wall.isDestructible
+    );
+
     if (destructibleWalls.length === 0) {
+      console.log(`🧱 WallBreakerStrategy: Không có tường phá được`);
       return null;
     }
 
     // Tính điểm số cho việc đặt bom tại vị trí hiện tại
     const bombScore = calculateBombScore(currentPos, gameState);
-    
+
     // Chỉ đặt bom nếu có thể phá ít nhất 1 tường
     const canBreakWalls = this.canBreakWalls(currentPos, gameState);
-    
+
     if (!canBreakWalls || bombScore < 50) {
       return null;
     }
@@ -53,22 +59,21 @@ export class WallBreakerStrategy extends BaseStrategy {
     const flameRange = gameState.currentBot.flameRange;
     const directions = [
       { dx: 0, dy: -1 }, // UP
-      { dx: 0, dy: 1 },  // DOWN
+      { dx: 0, dy: 1 }, // DOWN
       { dx: -1, dy: 0 }, // LEFT
-      { dx: 1, dy: 0 }   // RIGHT
+      { dx: 1, dy: 0 }, // RIGHT
     ];
 
     for (const dir of directions) {
       for (let i = 1; i <= flameRange; i++) {
         const checkPos = {
           x: bombPosition.x + dir.dx * i,
-          y: bombPosition.y + dir.dy * i
+          y: bombPosition.y + dir.dy * i,
         };
 
         // Kiểm tra xem có tường phá được không
-        const wall = gameState.map.walls.find(w => 
-          w.position.x === checkPos.x && 
-          w.position.y === checkPos.y
+        const wall = gameState.map.walls.find(
+          (w) => w.position.x === checkPos.x && w.position.y === checkPos.y
         );
 
         if (wall) {
@@ -90,45 +95,50 @@ export class WallBreakerStrategy extends BaseStrategy {
   private canEscapeAfterBomb(bombPosition: any, gameState: GameState): boolean {
     // Mô phỏng việc đặt bom
     const simulatedBomb = {
-      id: 'temp-wallbreaker',
+      id: "temp-wallbreaker",
       position: bombPosition,
       ownerId: gameState.currentBot.id,
       timeRemaining: 5000,
-      flameRange: gameState.currentBot.flameRange
+      flameRange: gameState.currentBot.flameRange,
     };
 
     const tempGameState = {
       ...gameState,
       map: {
         ...gameState.map,
-        bombs: [...gameState.map.bombs, simulatedBomb]
-      }
+        bombs: [...gameState.map.bombs, simulatedBomb],
+      },
     };
 
     // Kiểm tra các vị trí xung quanh có an toàn không
     const directions = [
       { dx: 0, dy: -1 }, // UP
-      { dx: 0, dy: 1 },  // DOWN
+      { dx: 0, dy: 1 }, // DOWN
       { dx: -1, dy: 0 }, // LEFT
-      { dx: 1, dy: 0 }   // RIGHT
+      { dx: 1, dy: 0 }, // RIGHT
     ];
 
     for (const dir of directions) {
       for (let step = 1; step <= 3; step++) {
         const escapePos = {
           x: bombPosition.x + dir.dx * step,
-          y: bombPosition.y + dir.dy * step
+          y: bombPosition.y + dir.dy * step,
         };
 
         // Kiểm tra có thể di chuyển đến vị trí này không
-        if (escapePos.x < 0 || escapePos.x >= gameState.map.width ||
-            escapePos.y < 0 || escapePos.y >= gameState.map.height) {
+        if (
+          escapePos.x < 0 ||
+          escapePos.x >= gameState.map.width ||
+          escapePos.y < 0 ||
+          escapePos.y >= gameState.map.height
+        ) {
           break;
         }
 
         // Kiểm tra không bị tường chặn
-        const hasWall = gameState.map.walls.some(wall =>
-          wall.position.x === escapePos.x && wall.position.y === escapePos.y
+        const hasWall = gameState.map.walls.some(
+          (wall) =>
+            wall.position.x === escapePos.x && wall.position.y === escapePos.y
         );
 
         if (hasWall) {

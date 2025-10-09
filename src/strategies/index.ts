@@ -10,3 +10,4 @@ export * from "./exploreStrategy";
 export * from "./defensiveStrategy";
 export * from "./wallBreakerStrategy";
 export * from "./smartNavigationStrategy";
+export * from "./bombStrategy";

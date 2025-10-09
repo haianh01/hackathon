@@ -11,6 +11,7 @@ import {
   isPositionSafe,
   canMoveTo,
   getDirectionToTarget,
+  getPositionInDirection,
 } from "../utils";
 
 /**
@@ -25,6 +26,7 @@ export class CollectStrategy extends BaseStrategy {
     const items = gameState.map.items;
 
     if (items.length === 0) {
+      console.log(`🎁 CollectStrategy: Không có item trên map`);
       return null;
     }
 
@@ -58,7 +60,7 @@ export class CollectStrategy extends BaseStrategy {
 
     // Tìm đường đi đến vật phẩm
     const direction = getDirectionToTarget(currentPos, bestItem.position);
-    const nextPos = this.getPositionInDirection(currentPos, direction);
+    const nextPos = getPositionInDirection(currentPos, direction);
 
     // Kiểm tra có thể di chuyển đến vị trí tiếp theo không
     if (!canMoveTo(nextPos, gameState)) {
@@ -96,26 +98,5 @@ export class CollectStrategy extends BaseStrategy {
       default:
         return 10;
     }
-  }
-
-  private getPositionInDirection(position: any, direction: Direction): any {
-    const newPos = { ...position };
-
-    switch (direction) {
-      case Direction.UP:
-        newPos.y -= 1;
-        break;
-      case Direction.DOWN:
-        newPos.y += 1;
-        break;
-      case Direction.LEFT:
-        newPos.x -= 1;
-        break;
-      case Direction.RIGHT:
-        newPos.x += 1;
-        break;
-    }
-
-    return newPos;
   }
 }
