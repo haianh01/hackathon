@@ -6,6 +6,12 @@ import { manhattanDistance, getPositionInDirection } from "./position";
  */
 export class Pathfinding {
   /**
+   * Manhattan distance heuristic for pathfinding.
+   */
+  static heuristic(a: Position, b: Position): number {
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  }
+  /**
    * Tìm đường đi ngắn nhất từ start đến goal
    */
   static findPath(
@@ -136,15 +142,33 @@ export class Pathfinding {
         !wall.isDestructible
     );
 
-    const hasChest = gameState.map.walls.some(
-      (wall) =>
-        wall.position.x === position.x &&
-        wall.position.y === position.y &&
-        wall.isDestructible
+    const hasChest = gameState.map.chests.some(
+      (chest) =>
+        chest.position.x === position.x && chest.position.y === position.y
     );
 
+    if (hasChest) {
+      console.log(
+        `[Pathfinding] Chest found at (${position.x}, ${position.y}). Path blocked.`
+      );
+    }
+
+    const isValid = !(hasSolidWall || hasChest);
+    // console.log(`[Pathfinding] Position (${position.x}, ${position.y}) is ${isValid ? 'valid' : 'invalid'}.`);
+
     // Cả tường cứng và rương đều chặn đường
-    return !(hasSolidWall || hasChest);
+    return isValid;
+  }
+
+  private static getMinHeuristic(
+    position: Position,
+    goals: Position[]
+  ): number {
+    let minDistance = Infinity;
+    for (const goal of goals) {
+      minDistance = Math.min(minDistance, manhattanDistance(position, goal));
+    }
+    return minDistance;
   }
 
   /**
@@ -171,10 +195,7 @@ export class Pathfinding {
     const goalSet = new Set(goals.map(this.positionKey));
 
     gScore.set(this.positionKey(start), 0);
-    fScore.set(
-      this.positionKey(start),
-      Math.min(...goals.map((g) => manhattanDistance(start, g)))
-    );
+    fScore.set(this.positionKey(start), this.getMinHeuristic(start, goals));
 
     while (openSet.length > 0) {
       let current = openSet[0]!;
@@ -206,8 +227,7 @@ export class Pathfinding {
           gScore.set(neighborKey, tentativeGScore);
           fScore.set(
             neighborKey,
-            tentativeGScore +
-              Math.min(...goals.map((g) => manhattanDistance(neighbor, g)))
+            tentativeGScore + this.getMinHeuristic(neighbor, goals)
           );
           if (!openSet.some((p) => this.positionKey(p) === neighborKey)) {
             openSet.push(neighbor);

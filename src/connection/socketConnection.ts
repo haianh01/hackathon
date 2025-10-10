@@ -26,7 +26,7 @@ export class SocketConnection {
   private onUserDisconnectCallback?: (data: any) => void;
   private isDevelopmentMode: boolean = true;
   private lastMoveTime: number = 0;
-  private readonly moveThrottleMs: number = 50; // Reduced to 50ms for smoother movement
+  private readonly moveThrottleMs: number = 17; // Match server tickrate (17ms)
   public predictedPosition: { x: number; y: number } | null = null;
   private lastConfirmedPosition: { x: number; y: number } | null = null;
   private currentDirection: Direction | null = null;
@@ -126,6 +126,11 @@ export class SocketConnection {
 
     this.socket.on("player_move", (data: any) => {
       if (data.uid === this.socket?.id) {
+        const oldPos = this.lastConfirmedPosition
+          ? `(${this.lastConfirmedPosition.x}, ${this.lastConfirmedPosition.y})`
+          : "unknown";
+        console.log(`📍 Position updated: ${oldPos} -> (${data.x}, ${data.y})`);
+
         this.lastConfirmedPosition = { x: data.x, y: data.y };
         if (this.myBomberInfo) {
           this.myBomberInfo.x = data.x;
@@ -229,21 +234,21 @@ export class SocketConnection {
     const moveAction = () => {
       if (this.socket?.connected && this.isGameStarted) {
         this.socket.emit("move", { orient: direction });
-        const currentPos = this.getCurrentPosition();
-        if (currentPos) {
-          this.predictedPosition = this.predictNextPosition(
-            currentPos,
-            direction
-          );
-        }
+        // const currentPos = this.getCurrentPosition();
+        // if (currentPos) {
+        //   this.predictedPosition = this.predictNextPosition(
+        //     currentPos,
+        //     direction
+        //   );
+        // }
       } else {
         this.stopContinuousMove();
       }
     };
 
     moveAction(); // Move immediately
-    this.moveInterval = setInterval(moveAction, 50); // Continue moving every 50ms
-    console.log(`🔄 Started continuous move: ${direction}`);
+    this.moveInterval = setInterval(moveAction, 17); // Match server tickrate (17ms = ~59 ticks/sec)
+    console.log(`🔄 Started continuous move: ${direction} (17ms interval)`);
   }
 
   /**
@@ -260,12 +265,13 @@ export class SocketConnection {
 
   /**
    * Predicts the next position based on the current position and direction.
+   * Server moves ~1px per tick at 17ms intervals (based on observation)
    */
   private predictNextPosition(
     currentPos: { x: number; y: number },
     direction: Direction
   ): { x: number; y: number } {
-    const MOVE_STEP = 1; // Server moves 1px per step
+    const MOVE_STEP = 1; // Server moves ~1px per tick (empirical value)
     switch (direction) {
       case Direction.UP:
         return { x: currentPos.x, y: currentPos.y - MOVE_STEP };

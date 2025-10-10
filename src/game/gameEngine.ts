@@ -90,9 +90,22 @@ export class GameEngine {
       (bot) => bot.id !== currentBot.id && bot.isAlive
     );
 
+    // Calculate map size from actual map data
+    const CELL_SIZE = 40;
+    const mapData = data.map || [];
+    const mapHeight = mapData.length * CELL_SIZE;
+    const mapWidth =
+      mapData.length > 0 && mapData[0] ? mapData[0].length * CELL_SIZE : 0;
+
+    console.log(
+      `🗺️ Map size: ${mapWidth}x${mapHeight} (${mapData[0]?.length || 0}x${
+        mapData.length
+      } cells)`
+    );
+
     const map: GameMap = {
-      width: 640, // 16 cells * 40 pixels
-      height: 640,
+      width: mapWidth,
+      height: mapHeight,
       walls: this.parseWallsFromMap(data.map || []),
       chests: this.parseChests(data.chests || []),
       items: this.parseItems(data.items || []),

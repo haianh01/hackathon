@@ -26,7 +26,10 @@ export class BombStrategy extends BaseStrategy {
     const { currentBot, map } = gameState;
     const botPosition = currentBot.position;
 
+    console.log("[BombStrategy] Evaluating...");
+
     if (currentBot.bombCount <= 0) {
+      console.log("[BombStrategy] No bombs available.");
       return null; // No bombs to place
     }
 
@@ -35,6 +38,7 @@ export class BombStrategy extends BaseStrategy {
         bomb.position.x === botPosition.x && bomb.position.y === botPosition.y
     );
     if (isBombAtPosition) {
+      console.log("[BombStrategy] Bomb already at position.");
       return null; // Don't place a bomb if one is already here
     }
 
@@ -44,15 +48,20 @@ export class BombStrategy extends BaseStrategy {
     // CRITICAL: First, check if there is a safe escape route.
     const escapePath = this.findEscapePath(simulatedGameState);
     if (!escapePath || escapePath.length === 0) {
+      console.log("[BombStrategy] No escape path found.");
       return null; // Do not place a bomb if there is no escape
     }
 
     // If an escape route exists, calculate the benefit of placing the bomb.
     const bombBenefit = this.calculateBombBenefit(gameState);
     if (bombBenefit.score <= 0) {
+      console.log(
+        `[BombStrategy] Bomb benefit is too low: ${bombBenefit.score}. Reason: ${bombBenefit.reason}`
+      );
       return null; // Not worth placing a bomb
     }
 
+    console.log(`[BombStrategy] Placing bomb. Benefit: ${bombBenefit.score}`);
     // Increase priority based on the benefit score
     const dynamicPriority =
       this.priority + Math.min(bombBenefit.score / 10, 19); // Cap bonus priority
@@ -86,9 +95,21 @@ export class BombStrategy extends BaseStrategy {
       map
     );
 
+    console.log(
+      `[BombStrategy] Bot position: (${botPosition.x}, ${botPosition.y})`
+    );
+    console.log(`[BombStrategy] Flame range: ${flameRange}`);
+    console.log(`[BombStrategy] Affected positions:`, affectedPositions);
+    console.log(`[BombStrategy] Chests on map:`, map.chests);
+
     // Score for destroying chests
     const destructibleChests = affectedPositions.filter((pos) =>
       map.chests.some((c) => c.position.x === pos.x && c.position.y === pos.y)
+    );
+
+    console.log(
+      `[BombStrategy] Destructible chests found:`,
+      destructibleChests
     );
 
     if (destructibleChests.length > 0) {
@@ -142,6 +163,7 @@ export class BombStrategy extends BaseStrategy {
     map: GameState["map"]
   ): Position[] {
     const positions: Position[] = [bombPosition];
+    const CELL_SIZE = 40; // Each cell is 40x40 pixels
     const directions = [
       { dx: 0, dy: -1 }, // UP
       { dx: 0, dy: 1 }, // DOWN
@@ -152,8 +174,8 @@ export class BombStrategy extends BaseStrategy {
     for (const dir of directions) {
       for (let i = 1; i <= flameRange; i++) {
         const pos = {
-          x: bombPosition.x + dir.dx * i,
-          y: bombPosition.y + dir.dy * i,
+          x: bombPosition.x + dir.dx * i * CELL_SIZE,
+          y: bombPosition.y + dir.dy * i * CELL_SIZE,
         };
 
         if (!isPositionInBounds(pos, map.width, map.height)) break;
@@ -163,15 +185,14 @@ export class BombStrategy extends BaseStrategy {
         );
         if (wall && !wall.isDestructible) break; // Solid wall blocks flame
 
+        positions.push(pos);
+
         const chest = map.chests.find(
           (c) => c.position.x === pos.x && c.position.y === pos.y
         );
         if (chest) {
-          positions.push(pos);
-          break; // Chest blocks flame
+          break; // Chest blocks flame propagation
         }
-
-        positions.push(pos);
       }
     }
     return positions;
@@ -184,7 +205,6 @@ export class BombStrategy extends BaseStrategy {
    */
   private findEscapePath(gameState: GameState): Position[] | null {
     const { currentBot, map } = gameState;
-    const pathfinder = new Pathfinding();
 
     // Find all safe positions on the map
     const safePositions: Position[] = [];

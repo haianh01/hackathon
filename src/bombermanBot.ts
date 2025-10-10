@@ -31,14 +31,12 @@ export class BomberManBot {
     console.log("🚀 Initializing Bomberman Bot...");
 
     try {
-      // Connect to the game server
       await this.connectToServer();
+      console.log("✅ Bot đã sẵn sàng!");
 
-      // Set up the bot's logic loop
       this.setupBotLogic();
 
       this.isRunning = true;
-      console.log("✅ Bot is ready!");
     } catch (error) {
       console.error("❌ Error during bot initialization:", error);
       throw error;
@@ -135,6 +133,14 @@ export class BomberManBot {
 
     try {
       const gameState = this.gameEngine.getGameState();
+      
+      // CRITICAL: Sync bot position from socket connection (realtime position from player_move event)
+      const socketPos = this.socketConnection.getCurrentPosition();
+      if (socketPos) {
+        gameState.currentBot.position = socketPos;
+        // console.log(`🔄 Synced position: (${socketPos.x}, ${socketPos.y})`);
+      }
+      
       const decision = this.ai.makeDecision(gameState);
       console.log(
         `🤖 AI Decision: ${decision.action} -> ${
@@ -175,22 +181,18 @@ export class BomberManBot {
     try {
       const myBotInfo = this.socketConnection.getMyBomberInfo();
       const socketId = myBotInfo?.uid;
-
       if (!socketId) {
-        console.warn("⚠️ Bot info not yet available, skipping update.");
+        console.warn("⚠️ Bot info not available yet.");
         return;
       }
-
       this.gameEngine.updateGameState(gameData, socketId);
 
       const currentBot = this.gameEngine.getCurrentBot();
-      if (!currentBot.isAlive) {
-        if (this.isRunning) {
-          console.log("🏁 Bot is no longer alive. Stopping logic.");
-          this.isRunning = false;
-        }
-        return;
-      }
+      console.log(
+        "%c🤪 ~ file: bombermanBot.ts:182 [] -> currentBot : ",
+        "color: #6ac955",
+        currentBot
+      );
     } catch (error) {
       console.error("❌ Error processing game data:", error);
     }
