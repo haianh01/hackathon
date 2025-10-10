@@ -100,7 +100,7 @@ export class BombStrategy extends BaseStrategy {
     );
     console.log(`[BombStrategy] Flame range: ${flameRange}`);
     console.log(`[BombStrategy] Affected positions:`, affectedPositions);
-    console.log(`[BombStrategy] Chests on map:`, map.chests);
+    // console.log(`[BombStrategy] Chests on map:`, map.chests);
 
     // Score for destroying chests
     const destructibleChests = affectedPositions.filter((pos) =>

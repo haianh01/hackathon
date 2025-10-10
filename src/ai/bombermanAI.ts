@@ -126,16 +126,16 @@ export class BombermanAI {
    */
   private getDefaultStrategies(): BotStrategy[] {
     return [
-      new EscapeStrategy(), // 100 - Highest priority - escape danger
-      new AlignAndBombStrategy(), // 85-100 - Align to grid and bomb chests
-      new BombStrategy(), // 80 - Place bombs strategically
-      new AttackStrategy(), // 80 - Attack enemies
-      new DefensiveStrategy(), // 70 - Play defensively
-      new CollectStrategy(), // 60 - Collect items
-      new ChestSeekerStrategy(), // 55 - Seek nearby chests
-      new WallBreakerStrategy(), // 50 - Break walls
       new ExploreStrategy(), // 40 - Explore the map
-      new SmartNavigationStrategy(), // 30 - Navigate intelligently
+      // new EscapeStrategy(), // 100 - Highest priority - escape danger
+      // new AlignAndBombStrategy(), // 85-100 - Align to grid and bomb chests
+      // new BombStrategy(), // 80 - Place bombs strategically
+      // new AttackStrategy(), // 80 - Attack enemies
+      // new DefensiveStrategy(), // 70 - Play defensively
+      // new CollectStrategy(), // 60 - Collect items
+      // new ChestSeekerStrategy(), // 55 - Seek nearby chests
+      // new WallBreakerStrategy(), // 50 - Break walls
+      // new SmartNavigationStrategy(), // 30 - Navigate intelligently
     ].sort((a, b) => b.priority - a.priority);
   }
 }
