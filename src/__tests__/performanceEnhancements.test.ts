@@ -14,12 +14,16 @@ import {
 } from "../utils";
 import { Direction } from "../types";
 
+// Test data constants
+const TEST_POSITION = { x: 5, y: 5 };
+const MOVEMENT_DELAY_MS = 200;
+const CONFIDENCE_DECAY_MS = 500;
+
 describe("PositionPredictor", () => {
   describe("predictCurrentPosition", () => {
     it("should return same position when not moving", () => {
       const lastConfirmed = {
-        x: 5,
-        y: 5,
+        ...TEST_POSITION,
         timestamp: Date.now(),
       };
 
@@ -29,16 +33,17 @@ describe("PositionPredictor", () => {
         1
       );
 
-      expect(result.x).toBe(5);
-      expect(result.y).toBe(5);
-      expect(result.confidence).toBe(1.0);
+      expect(result).toMatchObject({
+        x: TEST_POSITION.x,
+        y: TEST_POSITION.y,
+        confidence: 1.0,
+      });
     });
 
     it("should predict position when moving right", () => {
       const lastConfirmed = {
-        x: 5,
-        y: 5,
-        timestamp: Date.now() - 200, // 200ms ago
+        ...TEST_POSITION,
+        timestamp: Date.now() - MOVEMENT_DELAY_MS,
       };
 
       const result = PositionPredictor.predictCurrentPosition(
@@ -47,16 +52,17 @@ describe("PositionPredictor", () => {
         1
       );
 
-      expect(result.x).toBe(6); // Moved 1 cell right
-      expect(result.y).toBe(5);
+      expect(result).toMatchObject({
+        x: TEST_POSITION.x + 1,
+        y: TEST_POSITION.y,
+      });
       expect(result.confidence).toBeGreaterThan(0.5);
     });
 
     it("should decrease confidence over time", () => {
       const lastConfirmed = {
-        x: 5,
-        y: 5,
-        timestamp: Date.now() - 500, // 500ms ago
+        ...TEST_POSITION,
+        timestamp: Date.now() - CONFIDENCE_DECAY_MS,
       };
 
       const result = PositionPredictor.predictCurrentPosition(
@@ -71,41 +77,35 @@ describe("PositionPredictor", () => {
   });
 
   describe("predictNextPosition", () => {
-    it("should predict next position for each direction", () => {
-      const current = { x: 5, y: 5 };
+    const testCases = [
+      { direction: Direction.UP, expected: { x: 5, y: 4 } },
+      { direction: Direction.DOWN, expected: { x: 5, y: 6 } },
+      { direction: Direction.LEFT, expected: { x: 4, y: 5 } },
+      { direction: Direction.RIGHT, expected: { x: 6, y: 5 } },
+    ];
 
-      const up = PositionPredictor.predictNextPosition(current, Direction.UP);
-      expect(up).toEqual({ x: 5, y: 4 });
-
-      const down = PositionPredictor.predictNextPosition(
-        current,
-        Direction.DOWN
-      );
-      expect(down).toEqual({ x: 5, y: 6 });
-
-      const left = PositionPredictor.predictNextPosition(
-        current,
-        Direction.LEFT
-      );
-      expect(left).toEqual({ x: 4, y: 5 });
-
-      const right = PositionPredictor.predictNextPosition(
-        current,
-        Direction.RIGHT
-      );
-      expect(right).toEqual({ x: 6, y: 5 });
+    testCases.forEach(({ direction, expected }) => {
+      it(`should predict next position when moving ${direction}`, () => {
+        const result = PositionPredictor.predictNextPosition(
+          TEST_POSITION,
+          direction
+        );
+        expect(result).toEqual(expected);
+      });
     });
 
     it("should predict multiple steps", () => {
-      const current = { x: 5, y: 5 };
-
+      const steps = 3;
       const result = PositionPredictor.predictNextPosition(
-        current,
+        TEST_POSITION,
         Direction.RIGHT,
-        3
+        steps
       );
 
-      expect(result).toEqual({ x: 8, y: 5 });
+      expect(result).toEqual({
+        x: TEST_POSITION.x + steps,
+        y: TEST_POSITION.y,
+      });
     });
   });
 
@@ -121,22 +121,26 @@ describe("PositionPredictor", () => {
   });
 
   describe("needsCorrection", () => {
-    it("should return true if distance > 2", () => {
-      const predicted = { x: 5, y: 5 };
-      const confirmed = { x: 8, y: 8 };
+    const testCases = [
+      {
+        description: "should return true if distance > 2",
+        predicted: { x: 5, y: 5 },
+        confirmed: { x: 8, y: 8 },
+        expected: true,
+      },
+      {
+        description: "should return false if distance <= 2",
+        predicted: { x: 5, y: 5 },
+        confirmed: { x: 6, y: 6 },
+        expected: false,
+      },
+    ];
 
-      const result = PositionPredictor.needsCorrection(predicted, confirmed);
-
-      expect(result).toBe(true);
-    });
-
-    it("should return false if distance <= 2", () => {
-      const predicted = { x: 5, y: 5 };
-      const confirmed = { x: 6, y: 6 };
-
-      const result = PositionPredictor.needsCorrection(predicted, confirmed);
-
-      expect(result).toBe(false);
+    testCases.forEach(({ description, predicted, confirmed, expected }) => {
+      it(description, () => {
+        const result = PositionPredictor.needsCorrection(predicted, confirmed);
+        expect(result).toBe(expected);
+      });
     });
   });
 });
@@ -152,43 +156,52 @@ describe("LatencyTracker", () => {
     tracker.stopTracking();
   });
 
-  it("should return 0 latency when no measurements", () => {
-    expect(tracker.getAverageLatency()).toBe(0);
-    expect(tracker.getLatestLatency()).toBe(0);
+  describe("latency measurements", () => {
+    it("should return 0 latency when no measurements", () => {
+      expect(tracker.getAverageLatency()).toBe(0);
+      expect(tracker.getLatestLatency()).toBe(0);
+    });
+
+    it("should track latency measurements", () => {
+      const measurements = [50, 60, 70];
+      const expectedAverage = 60;
+
+      measurements.forEach((latency) => {
+        (tracker as any).addMeasurement(latency);
+      });
+
+      expect(tracker.getAverageLatency()).toBe(expectedAverage);
+      expect(tracker.getLatestLatency()).toBe(
+        measurements[measurements.length - 1]
+      );
+    });
   });
 
-  it("should track latency measurements", () => {
-    // Mock measurements (access private method for testing)
-    (tracker as any).addMeasurement(50);
-    (tracker as any).addMeasurement(60);
-    (tracker as any).addMeasurement(70);
+  describe("high latency detection", () => {
+    it("should detect high latency", () => {
+      const measurement = 250;
+      (tracker as any).addMeasurement(measurement);
 
-    expect(tracker.getAverageLatency()).toBe(60);
-    expect(tracker.getLatestLatency()).toBe(70);
+      expect(tracker.isHighLatency(200)).toBe(true);
+      expect(tracker.isHighLatency(300)).toBe(false);
+    });
   });
 
-  it("should detect high latency", () => {
-    (tracker as any).addMeasurement(250);
+  describe("connection quality", () => {
+    const qualityTestCases = [
+      { latency: 30, expected: "excellent" },
+      { latency: 80, expected: "good" },
+      { latency: 150, expected: "fair" },
+      { latency: 250, expected: "poor" },
+    ];
 
-    expect(tracker.isHighLatency(200)).toBe(true);
-    expect(tracker.isHighLatency(300)).toBe(false);
-  });
-
-  it("should return correct connection quality", () => {
-    (tracker as any).addMeasurement(30);
-    expect(tracker.getConnectionQuality()).toBe("excellent");
-
-    tracker.reset();
-    (tracker as any).addMeasurement(80);
-    expect(tracker.getConnectionQuality()).toBe("good");
-
-    tracker.reset();
-    (tracker as any).addMeasurement(150);
-    expect(tracker.getConnectionQuality()).toBe("fair");
-
-    tracker.reset();
-    (tracker as any).addMeasurement(250);
-    expect(tracker.getConnectionQuality()).toBe("poor");
+    qualityTestCases.forEach(({ latency, expected }) => {
+      it(`should return ${expected} quality for ${latency}ms latency`, () => {
+        tracker.reset();
+        (tracker as any).addMeasurement(latency);
+        expect(tracker.getConnectionQuality()).toBe(expected);
+      });
+    });
   });
 });
 

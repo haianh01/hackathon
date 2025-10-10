@@ -98,14 +98,19 @@ export interface ServerChest {
 
 // Server response for user event
 export interface UserResponse {
-  map: MapCell[][]; // 2D array
+  map: (string | null)[][];
   bombers: Bomber[];
-  bombs: ServerBomb[];
-  chests: ServerChest[];
-  items: ServerItem[];
+  bombs: any[]; // Should be typed as Bomb[], but need to confirm server response
+  items: any[]; // Should be typed as Item[], but need to confirm server response
+  chests: any[]; // Should be typed as Wall[], but need to confirm server response
+  timeRemaining?: number;
+  round?: number;
 }
 
-// Bot interfaces (internal representation)
+/**
+ * Thông tin về một bomber (bot hoặc người chơi)
+ */
+
 export interface Bot {
   id: string;
   position: Position;

@@ -1,7 +1,15 @@
-import { GameState, GameMap, Bot, Bomb, Item, Wall } from "../types";
+import {
+  GameState,
+  GameMap,
+  Bot,
+  Bomb,
+  Item,
+  Wall,
+  UserResponse,
+} from "../types";
 
 /**
- * Game Engine để xử lý logic và trạng thái game
+ * The GameEngine handles the game's logic and state management.
  */
 export class GameEngine {
   private gameState: GameState;
@@ -11,151 +19,111 @@ export class GameEngine {
   }
 
   /**
-   * Cập nhật trạng thái game từ dữ liệu server
+   * Updates the game state from server data.
+   * @param data The data received from the server.
+   * @param currentBotId The ID of the current bot.
    */
-  public updateGameState(data: any, currentBotId?: string): void {
+  public updateGameState(data: UserResponse, currentBotId: string): void {
     try {
       this.gameState = this.parseGameData(data, currentBotId);
     } catch (error) {
-      console.error("Lỗi khi cập nhật game state:", error);
+      console.error("Error updating game state:", error);
     }
   }
 
   /**
-   * Lấy trạng thái game hiện tại
+   * Gets the current game state.
+   * @returns A copy of the current game state.
    */
   public getGameState(): GameState {
     return { ...this.gameState };
   }
 
   /**
-   * Kiểm tra xem game có đang chạy không
+   * Checks if the game is currently running.
+   * @returns True if the game is running, false otherwise.
    */
   public isGameRunning(): boolean {
-    const currentBotAlive = this.gameState.currentBot.isAlive;
-    const hasTimeRemaining = this.gameState.timeRemaining > 0;
-    const hasEnemies = this.gameState.enemies.length > 0;
-    const hasAliveEnemies = this.gameState.enemies.some(
-      (enemy) => enemy.isAlive
-    );
+    const { currentBot, timeRemaining, enemies } = this.gameState;
+    const isBotAlive = currentBot.isAlive;
+    const hasTime = timeRemaining > 0;
+    const hasAliveEnemies = enemies.some((enemy) => enemy.isAlive);
 
-    console.log(`🔍 Game running check:`, {
-      currentBotAlive,
-      hasTimeRemaining,
-      hasEnemies,
-      hasAliveEnemies,
-      timeRemaining: this.gameState.timeRemaining,
-    });
-
-    // Game chạy nếu:
-    // 1. Bot hiện tại còn sống
-    // 2. Còn thời gian
-    // 3. Có kẻ thù (trong trường hợp multiplayer) HOẶC đây là single player mode
-    return (
-      currentBotAlive && hasTimeRemaining && (hasAliveEnemies || !hasEnemies)
-    );
+    // The game runs if the bot is alive, time remains, and there are living enemies (or no enemies in single-player).
+    return isBotAlive && hasTime && (hasAliveEnemies || enemies.length === 0);
   }
 
   /**
-   * Lấy thông tin bot hiện tại
+   * Gets the current bot's information.
+   * @returns A copy of the current bot's data.
    */
   public getCurrentBot(): Bot {
     return { ...this.gameState.currentBot };
   }
 
   /**
-   * Lấy danh sách kẻ thù
+   * Gets the list of enemies.
+   * @returns An array of enemy bots.
    */
   public getEnemies(): Bot[] {
     return this.gameState.enemies.map((enemy) => ({ ...enemy }));
   }
 
   /**
-   * Lấy bản đồ hiện tại
+   * Gets the current map.
+   * @returns A copy of the game map.
    */
   public getMap(): GameMap {
     return { ...this.gameState.map };
   }
 
   /**
-   * Parse dữ liệu từ server thành GameState
+   * Parses data from the server into a GameState object.
+   * @param data The raw data from the server.
+   * @param currentBotId The ID of the bot controlled by this client.
+   * @returns The parsed game state.
    */
-  private parseGameData(data: any, currentBotId?: string): GameState {
-    // console.log(
-    //   "%c🤪 ~ file: gameEngine.ts:66 [] -> data : ",
-    //   "color: #ac4d66",
-    //   data
-    // );
-
-    console.log(`🔍 Parsing game data với currentBotId: ${currentBotId}`);
-
-    // Parse map từ server (2D array format)
-    const walls = this.parseWallsFromMap(data.map || []);
+  private parseGameData(data: UserResponse, currentBotId: string): GameState {
     const bots = this.parseBots(data.bombers || []);
-
-    console.log(
-      `🔍 Parsed bots:`,
-      bots.map((b) => ({ id: b.id, name: b.name, position: b.position }))
-    );
-
-    const bombs = this.parseBombs(data.bombs || []);
-    const items = this.parseItems(data.items || []);
-    const chests = this.parseChests(data.chests || []);
-
-    const map: GameMap = {
-      width: 640, // 16 cells * 40 pixels
-      height: 640,
-      walls: [...walls], // solid walls
-      chests: [...chests], // destructible chests
-      items: items,
-      bombs: bombs,
-      bots: bots,
-    };
-
     const currentBot = this.findCurrentBot(bots, currentBotId);
     const enemies = bots.filter(
       (bot) => bot.id !== currentBot.id && bot.isAlive
     );
 
-    console.log(`🔍 Current bot found:`, {
-      id: currentBot.id,
-      name: currentBot.name,
-    });
-    console.log(
-      `🔍 Enemies found:`,
-      enemies.map((e) => ({ id: e.id, name: e.name }))
-    );
+    const map: GameMap = {
+      width: 640, // 16 cells * 40 pixels
+      height: 640,
+      walls: this.parseWallsFromMap(data.map || []),
+      chests: this.parseChests(data.chests || []),
+      items: this.parseItems(data.items || []),
+      bombs: this.parseBombs(data.bombs || []),
+      bots: bots,
+    };
 
     return {
       map,
       currentBot,
       enemies,
-      timeRemaining: data.timeRemaining || 300000, // 5 phút mặc định
-      round: data.round || 1,
+      timeRemaining: data.timeRemaining ?? 300000, // Default to 5 minutes
+      round: data.round ?? 1,
     };
   }
 
   /**
-   * Parse walls từ map 2D array (W = Wall, null = empty, C = Chest)
+   * Parses walls from the 2D map array.
+   * @param mapData The 2D array representing the map.
+   * @returns An array of wall objects.
    */
-  private parseWallsFromMap(mapData: any[]): Wall[] {
-    // console.log(
-    //   "%c🤪 ~ file: gameEngine.ts:141 [] -> mapData : ",
-    //   "color: #b9e2dc",
-    //   mapData
-    // );
+  private parseWallsFromMap(mapData: (string | null)[][]): Wall[] {
     const walls: Wall[] = [];
     const CELL_SIZE = 40;
 
     mapData.forEach((row, rowIndex) => {
-      row.forEach((cell: string | null, colIndex: number) => {
+      row.forEach((cell, colIndex) => {
         if (cell === "W") {
           walls.push({
-            position: {
-              x: colIndex * CELL_SIZE,
-              y: rowIndex * CELL_SIZE,
-            },
-            isDestructible: false, // Tường cứng
+            position: { x: colIndex * CELL_SIZE, y: rowIndex * CELL_SIZE },
+            isDestructible: false, // Solid wall
           });
         }
       });
@@ -165,19 +133,23 @@ export class GameEngine {
   }
 
   /**
-   * Parse chests (rương) - có thể phá hủy
+   * Parses destructible chests.
+   * @param chestsData The raw chest data from the server.
+   * @returns An array of wall objects representing chests.
    */
   private parseChests(chestsData: any[]): Wall[] {
     return chestsData
       .filter((chest) => !chest.isDestroyed)
       .map((chest) => ({
         position: { x: chest.x, y: chest.y },
-        isDestructible: true, // Rương có thể phá
+        isDestructible: true,
       }));
   }
 
   /**
-   * Parse items
+   * Parses items from server data.
+   * @param itemsData The raw item data.
+   * @returns An array of item objects.
    */
   private parseItems(itemsData: any[]): Item[] {
     return itemsData.map((item) => ({
@@ -188,60 +160,58 @@ export class GameEngine {
   }
 
   /**
-   * Parse bombs
+   * Parses bombs from server data.
+   * @param bombsData The raw bomb data.
+   * @returns An array of bomb objects.
    */
   private parseBombs(bombsData: any[]): Bomb[] {
     return bombsData.map((bomb) => ({
       id: bomb.id || `bomb-${bomb.x}-${bomb.y}`,
       position: { x: bomb.x, y: bomb.y },
       ownerId: bomb.uid || bomb.ownerId,
-      timeRemaining: bomb.timeRemaining || 5000,
+      timeRemaining: bomb.timeRemaining ?? 5000,
       flameRange: bomb.explosionRange || bomb.flameRange || 2,
     }));
   }
 
   /**
-   * Parse bots (bombers)
+   * Parses bots (bombers) from server data.
+   * @param botsData The raw bot data.
+   * @returns An array of bot objects.
    */
   private parseBots(botsData: any[]): Bot[] {
     return botsData.map((bot) => ({
       id: bot.uid,
       name: bot.name,
       position: { x: bot.x, y: bot.y },
-      speed: bot.speed || 1,
-      bombCount: bot.bombCount || 1,
-      flameRange: bot.explosionRange || 2,
+      speed: bot.speed ?? 1,
+      bombCount: bot.bombCount ?? 1,
+      flameRange: bot.explosionRange ?? 2,
       isAlive: bot.isAlive !== false,
-      score: bot.score || 0,
+      score: bot.score ?? 0,
     }));
   }
 
   /**
-   * Tìm bot hiện tại dựa vào Socket ID
+   * Finds the current bot based on its socket ID.
+   * @param bots The list of all bots.
+   * @param currentBotId The ID of the current bot.
+   * @returns The current bot, or a fallback empty bot if not found.
    */
-  private findCurrentBot(bots: Bot[], currentBotId?: string): Bot {
-    if (!currentBotId) {
-      // Nếu không có ID, lấy bot đầu tiên
-      console.warn("⚠️ Không có currentBotId, sử dụng bot đầu tiên");
-      return bots[0] || this.createEmptyBot();
-    }
-
+  private findCurrentBot(bots: Bot[], currentBotId: string): Bot {
     const bot = bots.find((b) => b.id === currentBotId);
-
     if (!bot) {
-      console.warn(`⚠️ Không tìm thấy bot với ID: ${currentBotId}`);
-      console.log(
-        "📋 Danh sách bots:",
-        bots.map((b) => ({ id: b.id, name: b.name }))
+      console.warn(
+        `⚠️ Bot with ID not found: ${currentBotId}. Falling back to the first bot.`
       );
-      // Fallback: lấy bot đầu tiên
       return bots[0] || this.createEmptyBot();
     }
     return bot;
   }
 
   /**
-   * Tạo bot rỗng (fallback)
+   * Creates an empty bot object as a fallback.
+   * @returns An empty bot.
    */
   private createEmptyBot(): Bot {
     return {
@@ -251,11 +221,15 @@ export class GameEngine {
       speed: 1,
       bombCount: 1,
       flameRange: 2,
-      isAlive: true,
+      isAlive: false, // Default to not alive to prevent logic errors
       score: 0,
     };
   }
 
+  /**
+   * Creates an empty game state object.
+   * @returns An empty game state.
+   */
   private createEmptyGameState(): GameState {
     return {
       map: {
@@ -267,15 +241,7 @@ export class GameEngine {
         bombs: [],
         bots: [],
       },
-      currentBot: {
-        id: "",
-        position: { x: 0, y: 0 },
-        speed: 1,
-        bombCount: 1,
-        flameRange: 2,
-        isAlive: true,
-        score: 0,
-      },
+      currentBot: this.createEmptyBot(),
       enemies: [],
       timeRemaining: 300000,
       round: 1,
@@ -283,7 +249,8 @@ export class GameEngine {
   }
 
   /**
-   * Tính toán các thống kê game
+   * Calculates game statistics.
+   * @returns An object with various game stats.
    */
   public getGameStats(): {
     totalBots: number;
@@ -294,7 +261,6 @@ export class GameEngine {
     timeRemainingMinutes: number;
   } {
     const allBots = [this.gameState.currentBot, ...this.gameState.enemies];
-
     return {
       totalBots: allBots.length,
       aliveBots: allBots.filter((bot) => bot.isAlive).length,

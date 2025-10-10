@@ -1,68 +1,73 @@
 import { BaseStrategy } from "./baseStrategy";
-import { GameState, BotDecision, BotAction, Direction } from "../types";
-import { getPositionInDirection, canMoveTo } from "../utils";
 import {
-  calculateBombScore,
+  GameState,
+  BotDecision,
+  BotAction,
+  Direction,
+  Position,
+} from "../types";
+import {
+  canMoveTo,
   isPositionSafe,
-  getPositionsInLine,
-} from "../utils";
+  calculateBombScore,
+} from "../utils/gameLogic";
+import { getPositionInDirection } from "../utils";
 
 /**
- * Chiến thuật tấn công - đặt bom để hạ gục kẻ thù
+ * Attack strategy - places bombs to eliminate enemies.
  */
 export class AttackStrategy extends BaseStrategy {
   name = "Attack";
   priority = 80;
 
   evaluate(gameState: GameState): BotDecision | null {
-    const currentPos = gameState.currentBot.position;
+    const { currentBot } = gameState;
+    const currentPos = currentBot.position;
 
-    // Kiểm tra xem có thể đặt bom không
-    if (gameState.currentBot.bombCount <= 0) {
-      console.log(
-        `💣 AttackStrategy: Không có bom (bombCount: ${gameState.currentBot.bombCount})`
-      );
+    // Check if a bomb can be placed
+    if (currentBot.bombCount <= 0) {
       return null;
     }
 
-    // Tính điểm số của việc đặt bom tại vị trí hiện tại
+    // Calculate the score for placing a bomb at the current position
     const bombScore = calculateBombScore(currentPos, gameState);
 
-    // Chỉ đặt bom nếu có khả năng hạ gục kẻ thù hoặc phá được nhiều vật
+    // Only place a bomb if it's likely to hit an enemy or destroy objects
     if (bombScore < 100) {
-      console.log(
-        `💣 AttackStrategy: Điểm bom quá thấp (score: ${bombScore}, cần >= 100)`
-      );
       return null;
     }
 
-    // Kiểm tra xem có thể thoát khỏi vùng nổ sau khi đặt bom không
+    // Check if it's possible to escape the blast radius after placing a bomb
     if (!this.canEscapeAfterBomb(currentPos, gameState)) {
       return null;
     }
 
     return this.createDecision(
       BotAction.BOMB,
-      this.priority + Math.floor(bombScore / 100), // Tăng priority dựa trên điểm số
-      `Tấn công - đặt bom (điểm: ${bombScore})`
+      this.priority + Math.floor(bombScore / 100), // Increase priority based on score
+      `Attack - place bomb (score: ${bombScore})`
     );
   }
 
   /**
-   * Kiểm tra xem có thể thoát khỏi vùng nổ sau khi đặt bom không
+   * Checks if it's possible to escape the blast radius after placing a bomb.
+   * @param bombPosition The position where the bomb is placed.
+   * @param gameState The current game state.
+   * @returns True if an escape path is found, false otherwise.
    */
-  private canEscapeAfterBomb(bombPosition: any, gameState: GameState): boolean {
-    // Mô phỏng bom được đặt
+  private canEscapeAfterBomb(
+    bombPosition: Position,
+    gameState: GameState
+  ): boolean {
     const simulatedBomb = {
       id: "temp",
       position: bombPosition,
       ownerId: gameState.currentBot.id,
-      timeRemaining: 5000, // 5 giây
+      timeRemaining: 5000, // 5 seconds
       flameRange: gameState.currentBot.flameRange,
     };
 
-    // Thêm bom vào state tạm thời
-    const tempGameState = {
+    const tempGameState: GameState = {
       ...gameState,
       map: {
         ...gameState.map,
@@ -70,7 +75,6 @@ export class AttackStrategy extends BaseStrategy {
       },
     };
 
-    // Kiểm tra tất cả các vị trí lân cận
     const directions = [
       Direction.UP,
       Direction.DOWN,
@@ -81,16 +85,14 @@ export class AttackStrategy extends BaseStrategy {
     for (const direction of directions) {
       let currentPos = { ...bombPosition };
 
-      // Thử di chuyển tối đa 3 bước (dựa trên tốc độ tối đa)
+      // Try moving up to 3 steps (based on max speed)
       for (let step = 1; step <= 3; step++) {
         currentPos = getPositionInDirection(currentPos, direction);
 
-        // Kiểm tra có thể di chuyển đến vị trí này không
         if (!canMoveTo(currentPos, gameState)) {
           break;
         }
 
-        // Kiểm tra vị trí này có an toàn không (không bị bom nổ)
         if (isPositionSafe(currentPos, tempGameState)) {
           return true;
         }

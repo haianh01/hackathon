@@ -1,23 +1,23 @@
-import { BombermanAI as BomberManAI } from "./ai";
+import { BombermanAI } from "./ai";
 import { GameEngine } from "./game";
-import { BotDecision, BotAction, Direction, UserResponse } from "./types";
+import { BotDecision, BotAction, UserResponse } from "./types";
 import { SocketConnection } from "./connection/socketConnection";
 
 /**
- * Main Bot class - điểm vào chính của ứng dụng
+ * Main Bot class - the primary entry point for the application.
  */
 export class BomberManBot {
-  private ai: BomberManAI;
+  private ai: BombermanAI;
   private gameEngine: GameEngine;
   private socketConnection: SocketConnection;
   private isRunning: boolean = false;
   private botLogicInterval: NodeJS.Timeout | undefined;
 
   constructor(serverAddress?: string, botToken?: string) {
-    this.ai = new BomberManAI();
+    this.ai = new BombermanAI();
     this.gameEngine = new GameEngine();
 
-    // Sử dụng giá trị từ param hoặc env
+    // Use values from parameters or environment variables
     const address = serverAddress || "https://zarena-dev4.zinza.com.vn";
     const token = botToken || process.env.BOT_TOKEN || "";
 
@@ -25,177 +25,143 @@ export class BomberManBot {
   }
 
   /**
-   * Khởi tạo bot và bắt đầu game
+   * Initializes the bot and starts the game.
    */
   public async initialize(): Promise<void> {
-    console.log("🚀 Khởi tạo Bomberman Bot...");
+    console.log("🚀 Initializing Bomberman Bot...");
 
     try {
-      // Kết nối đến game server
+      // Connect to the game server
       await this.connectToServer();
 
-      // Setup bot logic loop
+      // Set up the bot's logic loop
       this.setupBotLogic();
 
       this.isRunning = true;
-      console.log("✅ Bot đã sẵn sàng!");
+      console.log("✅ Bot is ready!");
     } catch (error) {
-      console.error("❌ Lỗi khi khởi tạo bot:", error);
+      console.error("❌ Error during bot initialization:", error);
       throw error;
     }
   }
 
   /**
-   * Kết nối đến game server qua Socket.IO
+   * Connects to the game server via Socket.IO.
    */
   private async connectToServer(): Promise<void> {
-    console.log("🔌 Đang kết nối đến server...");
+    console.log("🔌 Connecting to server...");
 
-    // Setup callbacks
-    this.socketConnection.onGameData((data: UserResponse) => {
-      this.processGameData(data);
-    });
-
+    // Set up event listeners
+    this.socketConnection.onGameData((data: UserResponse) =>
+      this.processGameData(data)
+    );
     this.socketConnection.onGameStart(() => {
-      console.log("🎮 Game bắt đầu!");
+      console.log("🎮 Game started!");
       this.isRunning = true;
     });
-
     this.socketConnection.onGameEnd(() => {
-      console.log("🏁 Game kết thúc!");
+      console.log("🏁 Game ended!");
       if (!this.socketConnection.isDevelopment()) {
         this.isRunning = false;
       }
     });
-
-    // Setup position update callback
     this.socketConnection.onPositionUpdate((x: number, y: number) => {
       console.log(`📍 Position updated: (${x}, ${y})`);
-      // Có thể cập nhật game engine nếu cần
     });
 
-    // Setup realtime event callbacks
+    // Set up real-time event callbacks
     this.setupRealtimeEventCallbacks();
 
-    // Kết nối
+    // Establish connection
     await this.socketConnection.connect();
-    console.log("🔌 đã kết nối đến server...");
+    console.log("🔌 Connected to server.");
   }
 
   /**
-   * Setup callbacks cho các sự kiện realtime
+   * Sets up callbacks for real-time game events.
    */
   private setupRealtimeEventCallbacks(): void {
-    // Callback khi có bom mới
     this.socketConnection.onNewBomb((data: any) => {
-      console.log(`⚡ Realtime: Bom mới tại (${data.x}, ${data.y})`);
-      // TODO: Cập nhật ngay lập tức vào game state để tránh bom
+      console.log(`⚡ Realtime: New bomb at (${data.x}, ${data.y})`);
+      // TODO: Immediately update game state to avoid bomb
       // this.gameEngine.addBombRealtime(data);
     });
 
-    // Callback khi bom nổ
     this.socketConnection.onBombExplode((data: any) => {
-      console.log(`⚡ Realtime: Bom nổ tại (${data.x}, ${data.y})`);
-      // TODO: Xóa bom khỏi danh sách nguy hiểm
+      console.log(`⚡ Realtime: Bomb exploded at (${data.x}, ${data.y})`);
+      // TODO: Remove bomb from danger list
       // this.gameEngine.removeBombRealtime(data.id);
     });
 
-    // Callback khi có item mới
     this.socketConnection.onChestDestroyed((data: any) => {
-      console.log(`⚡ Realtime: Rương bị phá tại (${data.x}, ${data.y})`);
-      // TODO: Item có thể xuất hiện, cần check lại
+      console.log(`⚡ Realtime: Chest destroyed at (${data.x}, ${data.y})`);
+      // TODO: An item might appear, needs re-evaluation
     });
 
-    // Callback khi item được thu thập
     this.socketConnection.onItemCollected((data: any) => {
-      console.log(`⚡ Realtime: Item được nhặt tại (${data.x}, ${data.y})`);
-      // TODO: Xóa item khỏi target list nếu có
+      console.log(`⚡ Realtime: Item collected at (${data.x}, ${data.y})`);
+      // TODO: Remove item from target list if present
     });
 
-    // Callback khi có người chết
     this.socketConnection.onUserDie((data: any) => {
       const myBomber = this.socketConnection.getMyBomberInfo();
+      if (!myBomber) return;
 
-      // Kiểm tra nếu bot bị giết
-      if (data.killed.uid === myBomber?.uid) {
-        console.log("💀 Bot đã bị tiêu diệt!");
+      if (data.killed.uid === myBomber.uid) {
+        console.log("💀 Bot has been eliminated!");
         this.isRunning = false;
-      }
-
-      // Kiểm tra nếu bot giết được địch
-      if (data.killer.uid === myBomber?.uid) {
+      } else if (data.killer.uid === myBomber.uid) {
         console.log(
-          `🎉 Bot đã hạ gục ${data.killed.name}! +${data.score} điểm`
+          `🎉 Bot eliminated ${data.killed.name}! +${data.score} score`
         );
       }
     });
   }
 
   /**
-   * Setup bot logic loop (chạy mỗi 500ms)
+   * Sets up the bot's logic loop to run at a fixed interval.
    */
   private setupBotLogic(): void {
-    this.botLogicInterval = setInterval(() => {
-      this.executeBotLogic();
-    }, 500);
+    this.botLogicInterval = setInterval(() => this.executeBotLogic(), 500);
   }
 
   /**
-   * Thực hiện logic bot
+   * Executes the main bot logic.
    */
   private executeBotLogic(): void {
-    console.log(
-      `🔍 Executing bot logic - Game running: ${this.socketConnection.isGameRunning()}, Bot running: ${
-        this.isRunning
-      }`
-    );
-
     if (!this.socketConnection.isGameRunning() || !this.isRunning) {
       return;
     }
 
     try {
       const gameState = this.gameEngine.getGameState();
-      console.log(`🔍 Game state cho AI:`, {
-        currentBot: {
-          id: gameState.currentBot.id,
-          name: gameState.currentBot.name,
-          position: gameState.currentBot.position,
-        },
-        enemies: gameState.enemies.length,
-        bombs: gameState.map.bombs.length,
-        items: gameState.map.items.length,
-      });
-
       const decision = this.ai.makeDecision(gameState);
-      console.log(`🤖 AI Decision:`, decision);
-
+      console.log(
+        `🤖 AI Decision: ${decision.action} -> ${
+          decision.direction || "N/A"
+        } with priority ${decision.priority}`
+      );
       this.executeAction(decision);
     } catch (error) {
-      console.error("❌ Lỗi trong bot logic:", error);
+      console.error("❌ Error in bot logic:", error);
     }
   }
 
   /**
-   * Thực hiện action dựa trên quyết định của AI
+   * Executes an action based on the AI's decision.
    */
   private executeAction(decision: BotDecision): void {
     switch (decision.action) {
       case BotAction.MOVE:
         if (decision.direction) {
-          // ✅ Dùng continuous move để di chuyển mượt mà
           this.socketConnection.startContinuousMove(decision.direction);
         }
         break;
       case BotAction.BOMB:
-        // Dừng di chuyển trước khi đặt bom
         this.socketConnection.stopContinuousMove();
         this.socketConnection.placeBomb();
         break;
       case BotAction.STOP:
-        // Dừng di chuyển khi cần dừng
-        this.socketConnection.stopContinuousMove();
-        break;
       default:
         this.socketConnection.stopContinuousMove();
         break;
@@ -203,169 +169,127 @@ export class BomberManBot {
   }
 
   /**
-   * Xử lý dữ liệu từ server và cập nhật game state
+   * Processes data from the server and updates the game state.
    */
   private processGameData(gameData: UserResponse): void {
     try {
-      // Lấy Socket ID từ connection
       const myBotInfo = this.socketConnection.getMyBomberInfo();
       const socketId = myBotInfo?.uid;
 
-      console.log(`🔍 Socket ID của bot: ${socketId}`);
-      // console.log(
-      //   `🔍 Dữ liệu bombers:`,
-      //   gameData.bombers?.map((b) => ({ name: b.name, uid: b.uid }))
-      // );
-
       if (!socketId) {
-        console.warn("⚠️ Chưa có thông tin bot, bỏ qua update");
+        console.warn("⚠️ Bot info not yet available, skipping update.");
         return;
       }
 
-      // Cập nhật trạng thái game với Socket ID
       this.gameEngine.updateGameState(gameData, socketId);
 
-      // Debug: Kiểm tra game state sau khi update
       const currentBot = this.gameEngine.getCurrentBot();
-      console.log(`🤖 Current bot sau update:`, {
-        id: currentBot.id,
-        name: currentBot.name,
-        position: currentBot.position,
-        isAlive: currentBot.isAlive,
-      });
-
-      // Kiểm tra game còn chạy không
-      if (!this.gameEngine.isGameRunning()) {
-        console.log("🏁 Game đã kết thúc hoặc bot không sống");
-        console.log(`🔍 Game running check:`, {
-          timeRemaining: this.gameEngine.getGameState().timeRemaining,
-          botAlive: currentBot.isAlive,
-          enemiesAlive: this.gameEngine.getEnemies().filter((e) => e.isAlive)
-            .length,
-        });
+      if (!currentBot.isAlive) {
+        if (this.isRunning) {
+          console.log("🏁 Bot is no longer alive. Stopping logic.");
+          this.isRunning = false;
+        }
         return;
       }
-
-      // Log thông tin game (nếu cần)
-      const stats = this.gameEngine.getGameStats();
-      console.log(
-        `📊 Stats: Score=${stats.currentBotScore}, Enemies=${
-          stats.aliveBots - 1
-        }`
-      );
     } catch (error) {
-      console.error("❌ Lỗi khi xử lý game data:", error);
+      console.error("❌ Error processing game data:", error);
     }
   }
 
   /**
-   * Format action thành string để gửi về server
-   */
-  private formatAction(action: BotAction, direction?: Direction): string {
-    // TODO: Format theo protocol của game server
-    // Đây là example format
-
-    switch (action) {
-      case BotAction.MOVE:
-        return `MOVE:${direction || Direction.STOP}`;
-      case BotAction.BOMB:
-        return "BOMB";
-      case BotAction.STOP:
-      default:
-        return "STOP";
-    }
-  }
-
-  /**
-   * Dừng bot và ngắt kết nối
+   * Shuts down the bot and disconnects.
    */
   public shutdown(): void {
-    console.log("🛑 Đang tắt bot...");
-
+    console.log("🛑 Shutting down bot...");
     this.isRunning = false;
 
-    // Clear interval
     if (this.botLogicInterval) {
       clearInterval(this.botLogicInterval);
       this.botLogicInterval = undefined;
     }
 
-    // Ngắt kết nối socket
     this.socketConnection.disconnect();
-
-    console.log("✅ Bot đã tắt hoàn toàn");
+    console.log("✅ Bot has been shut down completely.");
   }
 
   /**
-   * Dừng bot tạm thời (giữ kết nối)
+   * Temporarily stops the bot while maintaining the connection.
    */
   public stop(): void {
     this.isRunning = false;
-    console.log("⏸️ Bot đã tạm dừng");
+    console.log("⏸️ Bot has been paused.");
   }
 
   /**
-   * Kiểm tra bot có đang chạy không
+   * Checks if the bot is currently active.
    */
   public isActive(): boolean {
     return this.isRunning && this.socketConnection.isConnected();
   }
 
   /**
-   * Kiểm tra kết nối
+   * Checks if the socket is connected.
    */
   public isConnected(): boolean {
     return this.socketConnection.isConnected();
   }
 
   /**
-   * Kiểm tra game có đang chạy không
+   * Checks if the game is currently running.
    */
   public isGameRunning(): boolean {
     return this.socketConnection.isGameRunning();
   }
 
   /**
-   * Lấy thông tin bot hiện tại
+   * Gets the current bot's information.
    */
   public getBotInfo() {
     return this.socketConnection.getMyBomberInfo();
   }
 
   /**
-   * Lấy thông tin AI strategies
+   * Gets information about the AI strategies.
    */
   public getAIInfo(): Array<{ name: string; priority: number }> {
     return this.ai.getStrategiesInfo();
   }
 
   /**
-   * Cập nhật priority của strategy
+   * Updates the priority of a specific strategy.
    */
   public updateStrategyPriority(
     strategyName: string,
     priority: number
   ): boolean {
-    return this.ai.updateStrategyPriority(strategyName, priority);
+    const success = this.ai.updateStrategyPriority(strategyName, priority);
+    if (success) {
+      console.log(
+        `🔄 Strategy '${strategyName}' priority updated to ${priority}.`
+      );
+    } else {
+      console.warn(`⚠️ Strategy '${strategyName}' not found.`);
+    }
+    return success;
   }
 
   /**
-   * Reset AI về mặc định
+   * Resets AI strategies to their default priorities.
    */
   public resetAI(): void {
     this.ai.resetStrategies();
-    console.log("🔄 AI đã reset về mặc định");
+    console.log("🔄 AI strategies have been reset to default.");
   }
 
   /**
-   * Lấy thống kê game hiện tại
+   * Gets the current game statistics.
    */
   public getGameStats() {
     return this.gameEngine.getGameStats();
   }
 
   /**
-   * Lấy trạng thái game hiện tại (để debug)
+   * Gets the current game state for debugging purposes.
    */
   public getGameState() {
     return this.gameEngine.getGameState();

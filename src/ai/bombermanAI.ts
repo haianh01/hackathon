@@ -12,95 +12,74 @@ import {
 } from "../strategies";
 
 /**
- * AI Engine chính để điều khiển bot
+ * The main AI engine for controlling the bot.
  */
 export class BombermanAI {
   private strategies: BotStrategy[];
 
   constructor() {
-    // Khởi tạo tất cả các strategies theo thứ tự ưu tiên
-    this.strategies = [
-      new EscapeStrategy(), // Ưu tiên cao nhất - thoát hiểm
-      new BombStrategy(), // Đặt bom thông minh
-      new AttackStrategy(), // Tấn công kẻ thù
-      new DefensiveStrategy(), // Phòng thủ
-      new CollectStrategy(), // Thu thập vật phẩm
-      new WallBreakerStrategy(), // Phá tường
-      new SmartNavigationStrategy(), // Điều hướng thông minh
-      new ExploreStrategy(), // Khám phá bản đồ
-    ];
+    // Initialize all strategies in order of priority
+    this.strategies = this.getDefaultStrategies();
   }
 
   /**
-   * Đưa ra quyết định cho bot dựa trên trạng thái game hiện tại
+   * Makes a decision for the bot based on the current game state.
+   * @param gameState The current state of the game.
+   * @returns The decision for the bot to execute.
    */
   public makeDecision(gameState: GameState): BotDecision {
-    const decisions: BotDecision[] = [];
-
-    // Lấy quyết định từ tất cả strategies
-    for (const strategy of this.strategies) {
-      // console.log(
-      //   "%c🤪 ~ file: bombermanAI.ts:39 [] -> strategy : ",
-      //   "color: #4b2b6a",
-      //   strategy
-      // );
-      try {
-        const decision = strategy.evaluate(gameState);
-        console.log(
-          "%c🤪 ~ file: bombermanAI.ts:41 [] -> decision : ",
-          "color: #22e856",
-          decision
-        );
-        if (decision) {
-          decisions.push(decision);
+    const decisions: BotDecision[] = this.strategies
+      .map((strategy) => {
+        try {
+          return strategy.evaluate(gameState);
+        } catch (error) {
+          console.error(`Error in strategy ${strategy.name}:`, error);
+          return null;
         }
-      } catch (error) {
-        console.error(`Lỗi trong strategy ${strategy.name}:`, error);
-      }
-    }
+      })
+      .filter((decision): decision is BotDecision => decision !== null);
 
-    // Nếu không có quyết định nào, đứng yên
     if (decisions.length === 0) {
       return {
         action: BotAction.STOP,
         direction: Direction.STOP,
         priority: 0,
-        reason: "Không có chiến thuật phù hợp - đứng yên",
+        reason: "No suitable strategy found - standing still",
       };
     }
 
-    // Sắp xếp theo priority (cao nhất trước)
+    // Sort by priority (highest first)
     decisions.sort((a, b) => b.priority - a.priority);
 
-    // Trả về quyết định có priority cao nhất
     const bestDecision = decisions[0]!;
 
-    // Log để debug
     console.log(
-      `🤖 Bot quyết định: ${bestDecision.reason} (Priority: ${bestDecision.priority})`
+      `🤖 Bot decided: ${bestDecision.reason} (Priority: ${bestDecision.priority})`
     );
 
     return bestDecision;
   }
 
   /**
-   * Thêm strategy tùy chỉnh
+   * Adds a custom strategy to the AI.
+   * @param strategy The strategy to add.
    */
   public addStrategy(strategy: BotStrategy): void {
     this.strategies.push(strategy);
-    // Sắp xếp lại theo priority
-    this.strategies.sort((a, b) => b.priority - a.priority);
+    this.sortStrategies();
   }
 
   /**
-   * Xóa strategy theo tên
+   * Removes a strategy by its name.
+   * @param name The name of the strategy to remove.
    */
   public removeStrategy(name: string): void {
     this.strategies = this.strategies.filter((s) => s.name !== name);
   }
 
   /**
-   * Lấy thông tin về tất cả strategies
+   * Gets information about all current strategies.
+   * @returns An array of objects with strategy names and priorities.
    */
   public getStrategiesInfo(): Array<{ name: string; priority: number }> {
     return this.strategies.map((s) => ({
@@ -110,28 +89,49 @@ export class BombermanAI {
   }
 
   /**
-   * Cập nhật priority của một strategy
+   * Updates the priority of a strategy.
+   * @param name The name of the strategy to update.
+   * @param newPriority The new priority value.
+   * @returns True if the update was successful, false otherwise.
    */
   public updateStrategyPriority(name: string, newPriority: number): boolean {
     const strategy = this.strategies.find((s) => s.name === name);
     if (strategy) {
       strategy.priority = newPriority;
-      // Sắp xếp lại theo priority
-      this.strategies.sort((a, b) => b.priority - a.priority);
+      this.sortStrategies();
       return true;
     }
     return false;
   }
 
   /**
-   * Reset tất cả strategies về mặc định
+   * Resets all strategies to their default set and order.
    */
   public resetStrategies(): void {
-    this.strategies = [
-      new EscapeStrategy(),
-      new AttackStrategy(),
-      new CollectStrategy(),
-      new ExploreStrategy(),
-    ];
+    this.strategies = this.getDefaultStrategies();
+  }
+
+  /**
+   * Sorts strategies by priority in descending order.
+   */
+  private sortStrategies(): void {
+    this.strategies.sort((a, b) => b.priority - a.priority);
+  }
+
+  /**
+   * Gets the default set of strategies.
+   * @returns An array of default bot strategies.
+   */
+  private getDefaultStrategies(): BotStrategy[] {
+    return [
+      new EscapeStrategy(), // Highest priority - escape danger
+      new BombStrategy(), // Place bombs strategically
+      new AttackStrategy(), // Attack enemies
+      new DefensiveStrategy(), // Play defensively
+      new CollectStrategy(), // Collect items
+      new WallBreakerStrategy(), // Break walls
+      new SmartNavigationStrategy(), // Navigate intelligently
+      new ExploreStrategy(), // Explore the map
+    ].sort((a, b) => b.priority - a.priority);
   }
 }

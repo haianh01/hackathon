@@ -1,7 +1,13 @@
-import { GameState, BotDecision, Position, BotAction } from "../types";
+import {
+  GameState,
+  BotDecision,
+  Position,
+  BotAction,
+  Direction,
+} from "../types";
 
 /**
- * Interface cho các chiến thuật bot
+ * Interface for bot strategies.
  */
 export interface BotStrategy {
   name: string;
@@ -10,7 +16,7 @@ export interface BotStrategy {
 }
 
 /**
- * Base class cho tất cả các chiến thuật
+ * Base class for all strategies.
  */
 export abstract class BaseStrategy implements BotStrategy {
   abstract name: string;
@@ -18,24 +24,28 @@ export abstract class BaseStrategy implements BotStrategy {
 
   abstract evaluate(gameState: GameState): BotDecision | null;
 
+  /**
+   * Creates a decision object.
+   * @param action The action to take.
+   * @param priority The priority of the decision.
+   * @param reason A descriptive reason for the decision.
+   * @param direction The direction to move, if applicable.
+   * @param target The target position, if applicable.
+   * @returns A BotDecision object.
+   */
   protected createDecision(
     action: BotAction,
     priority: number,
     reason: string,
-    direction?: any,
+    direction?: Direction,
     target?: Position
   ): BotDecision {
-    const decision: BotDecision = {
-      action,
-      priority,
-      reason,
-    };
+    const decision: BotDecision = { action, priority, reason };
 
-    if (direction !== undefined) {
+    if (direction) {
       decision.direction = direction;
     }
-
-    if (target !== undefined) {
+    if (target) {
       decision.target = target;
     }
 
