@@ -2,7 +2,94 @@
 
 ## 📅 Ngày cập nhật: 10/10/2025
 
-## 🎯 Các cải tiến chính
+## 🎯 Các cải tiến mới nhất - PERFORMANCE ENHANCEMENTS
+
+### 1. ✅ Position Predictor - Dự đoán vị trí với Timestamp
+**Vấn đề trước đây:**
+- Prediction chỉ là ±1 ô, không tính thời gian và tốc độ
+- Không có độ tin cậy (confidence) cho prediction
+- Không detect khi prediction sai lệch
+
+**Giải pháp:**
+- Sử dụng timestamp để tính số ô đã di chuyển chính xác
+- Tính confidence giảm dần theo thời gian (1.0 → 0.5)
+- Detect và điều chỉnh khi prediction sai lệch > 2 ô
+- Hỗ trợ tốc độ bot khác nhau
+
+**File:** `src/utils/positionPredictor.ts`
+
+### 2. ✅ Latency Tracker - Theo dõi độ trễ
+**Mục đích:**
+- Ping server định kỳ để đo latency
+- Track average, min, max latency
+- Detect connection quality (excellent/good/fair/poor)
+- AI điều chỉnh strategy dựa trên latency
+
+**Tính năng:**
+- Auto ping mỗi 5 giây (configurable)
+- Giữ 20 measurements gần nhất
+- Cung cấp expected latency cho AI decision
+- Detect high latency warning
+
+**File:** `src/utils/latencyTracker.ts`
+
+### 3. ✅ Adaptive Loop Manager - Vòng lặp linh hoạt
+**Vấn đề trước đây:**
+- Bot logic luôn chạy 500ms/lần, không linh hoạt
+- Không phản ứng nhanh khi nguy hiểm
+- Lãng phí tài nguyên khi không cần
+
+**Giải pháp:**
+- 4 mức priority: EMERGENCY (100ms), HIGH (200ms), NORMAL (500ms), LOW (1000ms)
+- Auto-adjust dựa trên game state (bombs/enemies/items nearby)
+- `triggerEmergency()` - Chạy ngay + chuyển EMERGENCY trong 2s
+- `triggerNext()` - Chạy 1 lần ngay lập tức
+
+**File:** `src/utils/adaptiveLoopManager.ts`
+
+### 4. ✅ Smart Logger - Logger thông minh
+**Vấn đề trước đây:**
+- Log nhiều làm chậm bot trong competition
+- Không thể tắt log theo category
+- Không có performance profiling
+
+**Giải pháp:**
+- Auto-detect dev/competition mode
+- Competition: Chỉ log ERROR
+- Dev: Full logging với categories
+- Categories: GENERAL, SOCKET, MOVEMENT, AI, GAME_STATE, POSITION, BOMB, PERFORMANCE
+- `performance()` và `performanceAsync()` để đo thời gian
+
+**File:** `src/utils/smartLogger.ts`
+
+### 5. ✅ Command Acknowledgement - Xác nhận lệnh
+**Vấn đề trước đây:**
+- Không biết server có nhận lệnh không
+- Không có retry logic khi failed
+- Không track pending commands
+
+**Giải pháp:**
+- Socket.IO acknowledgement callbacks
+- Timeout sau 1s nếu server không response
+- Callback với success/failed
+- Track pending commands count
+- Stats về command types
+
+**File:** `src/utils/commandAckSystem.ts`
+
+---
+
+## 📚 Tài liệu chi tiết
+
+Xem `docs/PERFORMANCE_ENHANCEMENTS.md` cho:
+- Hướng dẫn sử dụng từng tính năng
+- Code examples chi tiết
+- Integration guide
+- Best practices
+
+---
+
+## 🎯 Các cải tiến trước đó
 
 ### 1. ✅ Continuous Movement System
 **Vấn đề trước đây:**
