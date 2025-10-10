@@ -146,6 +146,78 @@ export class Pathfinding {
     // Cả tường cứng và rương đều chặn đường
     return !(hasSolidWall || hasChest);
   }
+
+  /**
+   * Finds the shortest path from a start position to any of a set of goal positions.
+   * @param start The starting position.
+   * @param goals An array of possible goal positions.
+   * @param gameState The current game state.
+   * @returns The path as an array of positions, or null if no path is found.
+   */
+  static findShortestPath(
+    start: Position,
+    goals: Position[],
+    gameState: GameState
+  ): Position[] | null {
+    if (goals.length === 0) {
+      return null;
+    }
+
+    const openSet = [start];
+    const cameFrom = new Map<string, Position>();
+    const gScore = new Map<string, number>();
+    const fScore = new Map<string, number>();
+
+    const goalSet = new Set(goals.map(this.positionKey));
+
+    gScore.set(this.positionKey(start), 0);
+    fScore.set(
+      this.positionKey(start),
+      Math.min(...goals.map((g) => manhattanDistance(start, g)))
+    );
+
+    while (openSet.length > 0) {
+      let current = openSet[0]!;
+      let currentIndex = 0;
+      for (let i = 1; i < openSet.length; i++) {
+        if (
+          (fScore.get(this.positionKey(openSet[i]!)) || Infinity) <
+          (fScore.get(this.positionKey(current)) || Infinity)
+        ) {
+          current = openSet[i]!;
+          currentIndex = i;
+        }
+      }
+
+      const currentKey = this.positionKey(current);
+      if (goalSet.has(currentKey)) {
+        return this.reconstructPath(cameFrom, current);
+      }
+
+      openSet.splice(currentIndex, 1);
+
+      const neighbors = this.getNeighbors(current, gameState);
+      for (const neighbor of neighbors) {
+        const tentativeGScore = (gScore.get(currentKey) || 0) + 1;
+        const neighborKey = this.positionKey(neighbor);
+
+        if (tentativeGScore < (gScore.get(neighborKey) || Infinity)) {
+          cameFrom.set(neighborKey, current);
+          gScore.set(neighborKey, tentativeGScore);
+          fScore.set(
+            neighborKey,
+            tentativeGScore +
+              Math.min(...goals.map((g) => manhattanDistance(neighbor, g)))
+          );
+          if (!openSet.some((p) => this.positionKey(p) === neighborKey)) {
+            openSet.push(neighbor);
+          }
+        }
+      }
+    }
+
+    return null; // No path found
+  }
 }
 
 /**
