@@ -5,8 +5,9 @@ describe("SocketConnection", () => {
   let socketConnection: SocketConnection;
 
   beforeEach(() => {
+    // Use a production-like URL to avoid development mode auto-start
     socketConnection = new SocketConnection(
-      "http://localhost:3000",
+      "http://production-server.com",
       "test-token"
     );
   });
@@ -26,8 +27,17 @@ describe("SocketConnection", () => {
       expect(socketConnection.isConnected()).toBe(false);
     });
 
-    it("should not have game running initially", () => {
+    it("should not have game running initially in production mode", () => {
       expect(socketConnection.isGameRunning()).toBe(false);
+    });
+
+    it("should have game running initially in development mode", () => {
+      const devConnection = new SocketConnection(
+        "http://localhost:3000",
+        "test-token"
+      );
+      expect(devConnection.isGameRunning()).toBe(true);
+      devConnection.disconnect();
     });
 
     it("should return null for bomber info initially", () => {

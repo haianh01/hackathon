@@ -13,6 +13,7 @@ describe("BombermanAI", () => {
         width: 640,
         height: 640,
         walls: [],
+        chests: [],
         items: [],
         bombs: [],
         bots: [],

@@ -18,11 +18,20 @@ export class SocketConnection {
   private onGameStartCallback?: () => void;
   private onGameEndCallback?: () => void;
   private onPositionUpdateCallback?: (x: number, y: number) => void;
+  private onNewBombCallback?: (data: any) => void;
+  private onBombExplodeCallback?: (data: any) => void;
+  private onMapUpdateCallback?: (data: any) => void;
+  private onUserDieCallback?: (data: any) => void;
+  private onChestDestroyedCallback?: (data: any) => void;
+  private onItemCollectedCallback?: (data: any) => void;
+  private onUserDisconnectCallback?: (data: any) => void;
   private isDevelopmentMode: boolean = true;
   private lastMoveTime: number = 0;
-  private moveThrottleMs: number = 200; // Giới hạn 1 move mỗi 200ms
+  private moveThrottleMs: number = 50; // Giảm xuống 50ms để di chuyển mượt hơn
   private predictedPosition: { x: number; y: number } | null = null; // Vị trí dự đoán
   private lastConfirmedPosition: { x: number; y: number } | null = null; // Vị trí được server confirm
+  private currentDirection: Direction | null = null; // Hướng đang di chuyển
+  private moveInterval: NodeJS.Timeout | null = null; // Interval để di chuyển liên tục
 
   constructor(serverAddress: string, token: string) {
     this.serverAddress = serverAddress;
@@ -89,10 +98,10 @@ export class SocketConnection {
 
     // Sự kiện: Nhận thông tin ban đầu sau khi tham gia phòng thành công
     this.socket.on("user", (data: UserResponse) => {
-      console.log(
-        "⬅️ Nhận sự kiện 'user': Nhận thông tin bản đồ và trạng thái game.",
-        data
-      );
+      // console.log(
+      //   "⬅️ Nhận sự kiện 'user': Nhận thông tin bản đồ và trạng thái game.",
+      //   data
+      // );
 
       if (data.bombers && data.bombers.length > 0) {
         this.myBomberInfo =
@@ -182,32 +191,67 @@ export class SocketConnection {
 
     this.socket.on("new_bomb", (data: any) => {
       console.log(`⬅️ Bom mới được đặt tại (${data.x}, ${data.y})`);
+
+      // Callback để cập nhật game state ngay lập tức
+      if (this.onNewBombCallback) {
+        this.onNewBombCallback(data);
+      }
     });
 
     this.socket.on("bomb_explode", (data: any) => {
       console.log(`💥 Bom nổ tại (${data.x}, ${data.y})`);
+
+      // Callback để xóa bom khỏi danh sách và cập nhật vùng nguy hiểm
+      if (this.onBombExplodeCallback) {
+        this.onBombExplodeCallback(data);
+      }
     });
 
     this.socket.on("map_update", (data: any) => {
-      // console.log("⬅️ Cập nhật bản đồ: Rương và Item mới.");
+      console.log("⬅️ Cập nhật bản đồ: Rương và Item mới.");
+
+      // Callback để cập nhật bản đồ (chest/item mới xuất hiện)
+      if (this.onMapUpdateCallback) {
+        this.onMapUpdateCallback(data);
+      }
     });
 
     this.socket.on("user_die_update", (data: any) => {
       console.log(
         `💀 Bot ${data.killed.name} đã bị hạ gục bởi ${data.killer.name}!`
       );
+
+      // Callback để cập nhật trạng thái người chơi (ai chết, ai giết)
+      if (this.onUserDieCallback) {
+        this.onUserDieCallback(data);
+      }
     });
 
     this.socket.on("chest_destroyed", (data: any) => {
       console.log(`📦 Rương bị phá hủy tại (${data.x}, ${data.y})`);
+
+      // Callback để xóa chest khỏi map, có thể spawn item
+      if (this.onChestDestroyedCallback) {
+        this.onChestDestroyedCallback(data);
+      }
     });
 
     this.socket.on("item_collected", (data: any) => {
       console.log(`🎁 Item được thu thập tại (${data.x}, ${data.y})`);
+
+      // Callback để xóa item khỏi map
+      if (this.onItemCollectedCallback) {
+        this.onItemCollectedCallback(data);
+      }
     });
 
     this.socket.on("user_disconnect", (data: any) => {
       console.log(`👋 User ${data.name} đã ngắt kết nối`);
+
+      // Callback để xóa user khỏi danh sách
+      if (this.onUserDisconnectCallback) {
+        this.onUserDisconnectCallback(data);
+      }
     });
   }
 
@@ -234,46 +278,95 @@ export class SocketConnection {
   }
 
   /**
-   * Di chuyển bot theo hướng
+   * Di chuyển bot theo hướng (single move - gửi lệnh 1 lần)
    */
   public move(direction: Direction): void {
     if (!this.isGameStarted || !this.socket) {
       return;
     }
 
-    // Throttle để tránh spam request
+    // Throttle nhẹ để tránh spam request
     const now = Date.now();
     if (now - this.lastMoveTime < this.moveThrottleMs) {
-      console.log(`⏳ Move bị throttle, đợi ${this.moveThrottleMs}ms`);
       return;
     }
 
-    // Option 2: Predict next position trước khi gửi lệnh
+    // Predict next position trước khi gửi lệnh
     const currentPos = this.getCurrentPosition();
     if (currentPos) {
       const predictedPos = this.predictNextPosition(currentPos, direction);
-      console.log(
-        `🔮 Predicted position: (${predictedPos.x}, ${predictedPos.y})`
-      );
-
-      // Store predicted position for optimistic update
       this.predictedPosition = predictedPos;
     }
 
     this.lastMoveTime = now;
-    console.log(`➡️ Gửi sự kiện 'move': ${direction}`);
+    console.log(`➡️ Move: ${direction}`);
     this.socket.emit("move", { orient: direction });
   }
 
   /**
+   * Di chuyển liên tục theo hướng cho đến khi dừng lại
+   * Gửi lệnh move mỗi 100ms để đảm bảo bot di chuyển mượt
+   */
+  public startContinuousMove(direction: Direction): void {
+    if (!this.isGameStarted || !this.socket) {
+      return;
+    }
+
+    // Nếu đã đang di chuyển cùng hướng, không cần restart
+    if (this.currentDirection === direction && this.moveInterval) {
+      return;
+    }
+
+    // Dừng di chuyển cũ (nếu có)
+    this.stopContinuousMove();
+
+    // Lưu hướng hiện tại
+    this.currentDirection = direction;
+
+    // Gửi lệnh move ngay lập tức
+    this.socket.emit("move", { orient: direction });
+    console.log(`🔄 Bắt đầu di chuyển liên tục: ${direction}`);
+
+    // Tạo interval để gửi lệnh move liên tục
+    this.moveInterval = setInterval(() => {
+      if (this.socket && this.isGameStarted) {
+        this.socket.emit("move", { orient: direction });
+
+        // Update predicted position
+        const currentPos = this.getCurrentPosition();
+        if (currentPos) {
+          this.predictedPosition = this.predictNextPosition(
+            currentPos,
+            direction
+          );
+        }
+      } else {
+        this.stopContinuousMove();
+      }
+    }, 50); // Gửi mỗi 50ms (20 lần/giây) để di chuyển nhanh và mượt
+  }
+
+  /**
+   * Dừng di chuyển liên tục
+   */
+  public stopContinuousMove(): void {
+    if (this.moveInterval) {
+      clearInterval(this.moveInterval);
+      this.moveInterval = null;
+      this.currentDirection = null;
+      console.log(`⏹️ Dừng di chuyển liên tục`);
+    }
+  }
+
+  /**
    * Dự đoán vị trí tiếp theo dựa trên direction
-   * Mỗi lần di chuyển = 3 pixels
+   * Mỗi lần di chuyển = 1 pixels
    */
   private predictNextPosition(
     currentPos: { x: number; y: number },
     direction: Direction
   ): { x: number; y: number } {
-    const MOVE_STEP = 3; // Server di chuyển 3px mỗi lần
+    const MOVE_STEP = 1; // Server di chuyển 1px mỗi lần
 
     switch (direction) {
       case Direction.UP:
@@ -304,6 +397,9 @@ export class SocketConnection {
    * Ngắt kết nối
    */
   public disconnect(): void {
+    // Dừng di chuyển liên tục trước khi disconnect
+    this.stopContinuousMove();
+
     if (this.socket) {
       this.socket.disconnect();
       this.socket = null;
@@ -366,6 +462,55 @@ export class SocketConnection {
    */
   public onPositionUpdate(callback: (x: number, y: number) => void): void {
     this.onPositionUpdateCallback = callback;
+  }
+
+  /**
+   * Đăng ký callback cho bom mới
+   */
+  public onNewBomb(callback: (data: any) => void): void {
+    this.onNewBombCallback = callback;
+  }
+
+  /**
+   * Đăng ký callback cho bom nổ
+   */
+  public onBombExplode(callback: (data: any) => void): void {
+    this.onBombExplodeCallback = callback;
+  }
+
+  /**
+   * Đăng ký callback cho cập nhật map
+   */
+  public onMapUpdate(callback: (data: any) => void): void {
+    this.onMapUpdateCallback = callback;
+  }
+
+  /**
+   * Đăng ký callback cho người chơi chết
+   */
+  public onUserDie(callback: (data: any) => void): void {
+    this.onUserDieCallback = callback;
+  }
+
+  /**
+   * Đăng ký callback cho rương bị phá
+   */
+  public onChestDestroyed(callback: (data: any) => void): void {
+    this.onChestDestroyedCallback = callback;
+  }
+
+  /**
+   * Đăng ký callback cho item được thu thập
+   */
+  public onItemCollected(callback: (data: any) => void): void {
+    this.onItemCollectedCallback = callback;
+  }
+
+  /**
+   * Đăng ký callback cho người chơi ngắt kết nối
+   */
+  public onUserDisconnect(callback: (data: any) => void): void {
+    this.onUserDisconnectCallback = callback;
   }
 
   /**

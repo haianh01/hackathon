@@ -74,9 +74,61 @@ export class BomberManBot {
       // Có thể cập nhật game engine nếu cần
     });
 
+    // Setup realtime event callbacks
+    this.setupRealtimeEventCallbacks();
+
     // Kết nối
     await this.socketConnection.connect();
     console.log("🔌 đã kết nối đến server...");
+  }
+
+  /**
+   * Setup callbacks cho các sự kiện realtime
+   */
+  private setupRealtimeEventCallbacks(): void {
+    // Callback khi có bom mới
+    this.socketConnection.onNewBomb((data: any) => {
+      console.log(`⚡ Realtime: Bom mới tại (${data.x}, ${data.y})`);
+      // TODO: Cập nhật ngay lập tức vào game state để tránh bom
+      // this.gameEngine.addBombRealtime(data);
+    });
+
+    // Callback khi bom nổ
+    this.socketConnection.onBombExplode((data: any) => {
+      console.log(`⚡ Realtime: Bom nổ tại (${data.x}, ${data.y})`);
+      // TODO: Xóa bom khỏi danh sách nguy hiểm
+      // this.gameEngine.removeBombRealtime(data.id);
+    });
+
+    // Callback khi có item mới
+    this.socketConnection.onChestDestroyed((data: any) => {
+      console.log(`⚡ Realtime: Rương bị phá tại (${data.x}, ${data.y})`);
+      // TODO: Item có thể xuất hiện, cần check lại
+    });
+
+    // Callback khi item được thu thập
+    this.socketConnection.onItemCollected((data: any) => {
+      console.log(`⚡ Realtime: Item được nhặt tại (${data.x}, ${data.y})`);
+      // TODO: Xóa item khỏi target list nếu có
+    });
+
+    // Callback khi có người chết
+    this.socketConnection.onUserDie((data: any) => {
+      const myBomber = this.socketConnection.getMyBomberInfo();
+
+      // Kiểm tra nếu bot bị giết
+      if (data.killed.uid === myBomber?.uid) {
+        console.log("💀 Bot đã bị tiêu diệt!");
+        this.isRunning = false;
+      }
+
+      // Kiểm tra nếu bot giết được địch
+      if (data.killer.uid === myBomber?.uid) {
+        console.log(
+          `🎉 Bot đã hạ gục ${data.killed.name}! +${data.score} điểm`
+        );
+      }
+    });
   }
 
   /**
@@ -131,14 +183,21 @@ export class BomberManBot {
     switch (decision.action) {
       case BotAction.MOVE:
         if (decision.direction) {
-          this.socketConnection.move(decision.direction);
+          // ✅ Dùng continuous move để di chuyển mượt mà
+          this.socketConnection.startContinuousMove(decision.direction);
         }
         break;
       case BotAction.BOMB:
+        // Dừng di chuyển trước khi đặt bom
+        this.socketConnection.stopContinuousMove();
         this.socketConnection.placeBomb();
         break;
       case BotAction.STOP:
+        // Dừng di chuyển khi cần dừng
+        this.socketConnection.stopContinuousMove();
+        break;
       default:
+        this.socketConnection.stopContinuousMove();
         break;
     }
   }
@@ -153,10 +212,10 @@ export class BomberManBot {
       const socketId = myBotInfo?.uid;
 
       console.log(`🔍 Socket ID của bot: ${socketId}`);
-      console.log(
-        `🔍 Dữ liệu bombers:`,
-        gameData.bombers?.map((b) => ({ name: b.name, uid: b.uid }))
-      );
+      // console.log(
+      //   `🔍 Dữ liệu bombers:`,
+      //   gameData.bombers?.map((b) => ({ name: b.name, uid: b.uid }))
+      // );
 
       if (!socketId) {
         console.warn("⚠️ Chưa có thông tin bot, bỏ qua update");

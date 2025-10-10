@@ -20,10 +20,8 @@ export class WallBreakerStrategy extends BaseStrategy {
       return null;
     }
 
-    // Tìm tường có thể phá gần vị trí hiện tại
-    const destructibleWalls = gameState.map.walls.filter(
-      (wall) => wall.isDestructible
-    );
+    // Tìm tường có thể phá gần vị trí hiện tại (chests)
+    const destructibleWalls = (gameState.map.chests || []).slice();
 
     if (destructibleWalls.length === 0) {
       console.log(`🧱 WallBreakerStrategy: Không có tường phá được`);
@@ -72,16 +70,18 @@ export class WallBreakerStrategy extends BaseStrategy {
         };
 
         // Kiểm tra xem có tường phá được không
+        // Check chest first
+        const chest = (gameState.map.chests || []).find(
+          (c) => c.position.x === checkPos.x && c.position.y === checkPos.y
+        );
+        if (chest) return true;
+
         const wall = gameState.map.walls.find(
           (w) => w.position.x === checkPos.x && w.position.y === checkPos.y
         );
-
         if (wall) {
-          if (wall.isDestructible) {
-            return true; // Tìm thấy tường có thể phá
-          } else {
-            break; // Gặp tường không phá được, dừng kiểm tra hướng này
-          }
+          // solid wall blocks further flames
+          break;
         }
       }
     }

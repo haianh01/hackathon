@@ -39,11 +39,11 @@ export class BombermanAI {
 
     // Lấy quyết định từ tất cả strategies
     for (const strategy of this.strategies) {
-      console.log(
-        "%c🤪 ~ file: bombermanAI.ts:39 [] -> strategy : ",
-        "color: #4b2b6a",
-        strategy
-      );
+      // console.log(
+      //   "%c🤪 ~ file: bombermanAI.ts:39 [] -> strategy : ",
+      //   "color: #4b2b6a",
+      //   strategy
+      // );
       try {
         const decision = strategy.evaluate(gameState);
         console.log(

@@ -13,6 +13,7 @@ describe("SmartNavigationStrategy", () => {
         width: 10,
         height: 10,
         walls: [],
+        chests: [],
         items: [],
         bombs: [],
         bots: [],
@@ -119,7 +120,7 @@ describe("SmartNavigationStrategy", () => {
 
     it("should navigate to strategic positions when no items", () => {
       // Thêm tường có thể phá để tạo vị trí chiến thuật
-      mockGameState.map.walls = [
+      mockGameState.map.chests = [
         { position: { x: 6, y: 5 }, isDestructible: true },
         { position: { x: 5, y: 6 }, isDestructible: true },
       ];

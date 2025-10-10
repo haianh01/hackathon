@@ -12,6 +12,7 @@ describe("Strategies", () => {
         width: 640,
         height: 640,
         walls: [],
+        chests: [],
         items: [],
         bombs: [],
         bots: [],
@@ -116,7 +117,7 @@ describe("Strategies", () => {
             },
           ],
           bombs: [], // Đảm bảo không có bom
-          walls: []  // Đảm bảo không có tường chặn
+          walls: [], // Đảm bảo không có tường chặn
         },
       };
 

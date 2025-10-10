@@ -116,16 +116,23 @@ export class SmartNavigationStrategy extends BaseStrategy {
    */
   private findBestTarget(gameState: GameState): any {
     const currentPos = gameState.currentBot.position;
+    const maxReasonableDistance = 20; // Giới hạn khoảng cách hợp lý
     let bestTarget = null;
     let bestScore = -1;
 
-    // Kiểm tra tất cả vật phẩm
+    // Kiểm tra tất cả vật phẩm trong phạm vi hợp lý
     for (const item of gameState.map.items) {
       if (!isPositionSafe(item.position, gameState)) {
         continue;
       }
 
       const distance = manhattanDistance(currentPos, item.position);
+
+      // Bỏ qua items quá xa
+      if (distance > maxReasonableDistance) {
+        continue;
+      }
+
       const itemValue = this.getItemValue(item.type);
       const score = itemValue / (distance + 1);
 
@@ -136,14 +143,18 @@ export class SmartNavigationStrategy extends BaseStrategy {
     }
 
     // Kiểm tra vị trí chiến thuật (gần tường có thể phá)
-    if (!bestTarget || bestScore < 10) {
+    if (!bestTarget || bestScore < 5) {
       const strategicPosition = this.findStrategicPosition(gameState);
       if (strategicPosition) {
         const distance = manhattanDistance(currentPos, strategicPosition);
-        const strategicScore = 30 / (distance + 1);
 
-        if (strategicScore > bestScore) {
-          bestTarget = strategicPosition;
+        // Chỉ chọn nếu trong phạm vi hợp lý
+        if (distance <= maxReasonableDistance) {
+          const strategicScore = 30 / (distance + 1);
+
+          if (strategicScore > bestScore) {
+            bestTarget = strategicPosition;
+          }
         }
       }
     }
@@ -155,26 +166,45 @@ export class SmartNavigationStrategy extends BaseStrategy {
    * Tìm vị trí chiến thuật tốt (gần nhiều tường có thể phá)
    */
   private findStrategicPosition(gameState: GameState): any {
-    const destructibleWalls = gameState.map.walls.filter(
-      (wall) => wall.isDestructible
-    );
+    const destructibleWalls = (gameState.map.chests || []).slice();
 
     if (destructibleWalls.length === 0) {
       return null;
     }
 
-    // Tìm vị trí có thể phá nhiều tường nhất
+    const currentPos = gameState.currentBot.position;
+    const maxSearchRadius = 15; // Giới hạn phạm vi tìm kiếm
+
+    // Tìm vị trí có thể phá nhiều tường nhất trong phạm vi hợp lý
     let bestPosition = null;
     let maxWallCount = 0;
 
-    for (let x = 0; x < gameState.map.width; x++) {
-      for (let y = 0; y < gameState.map.height; y++) {
+    for (
+      let x = Math.max(0, currentPos.x - maxSearchRadius);
+      x <= Math.min(gameState.map.width - 1, currentPos.x + maxSearchRadius);
+      x++
+    ) {
+      for (
+        let y = Math.max(0, currentPos.y - maxSearchRadius);
+        y <= Math.min(gameState.map.height - 1, currentPos.y + maxSearchRadius);
+        y++
+      ) {
         const position = { x, y };
 
+        // Giới hạn khoảng cách Manhattan
+        const distance = manhattanDistance(currentPos, position);
+        if (distance > maxSearchRadius) {
+          continue;
+        }
+
         // Kiểm tra có thể đứng ở đây không
-        const canStand = !gameState.map.walls.some(
-          (wall) => wall.position.x === x && wall.position.y === y
-        );
+        const canStand =
+          !gameState.map.walls.some(
+            (wall) => wall.position.x === x && wall.position.y === y
+          ) &&
+          !(gameState.map.chests || []).some(
+            (c) => c.position.x === x && c.position.y === y
+          );
 
         if (!canStand || !isPositionSafe(position, gameState)) {
           continue;
@@ -186,9 +216,19 @@ export class SmartNavigationStrategy extends BaseStrategy {
           gameState
         );
 
-        if (wallCount > maxWallCount) {
-          maxWallCount = wallCount;
-          bestPosition = position;
+        // Ưu tiên vị trí có nhiều tường và gần hơn
+        if (wallCount > 0) {
+          const score = (wallCount * 10) / (distance + 1);
+          const currentBestScore =
+            (maxWallCount * 10) /
+            (bestPosition
+              ? manhattanDistance(currentPos, bestPosition) + 1
+              : 1);
+
+          if (score > currentBestScore) {
+            maxWallCount = wallCount;
+            bestPosition = position;
+          }
         }
       }
     }
@@ -222,6 +262,9 @@ export class SmartNavigationStrategy extends BaseStrategy {
 
         const wall = gameState.map.walls.find(
           (w) => w.position.x === checkPos.x && w.position.y === checkPos.y
+        );
+        const chestAtPos = (gameState.map.chests || []).find(
+          (c) => c.position.x === checkPos.x && c.position.y === checkPos.y
         );
 
         if (wall) {
@@ -297,9 +340,13 @@ export class SmartNavigationStrategy extends BaseStrategy {
         const position = { x, y };
 
         // Kiểm tra có thể đứng ở đây không
-        const canStand = !map.walls.some(
-          (wall) => wall.position.x === x && wall.position.y === y
-        );
+        const canStand =
+          !map.walls.some(
+            (wall) => wall.position.x === x && wall.position.y === y
+          ) &&
+          !(map.chests || []).some(
+            (c) => c.position.x === x && c.position.y === y
+          );
 
         if (canStand && isPositionSafe(position, gameState)) {
           const distance = manhattanDistance(currentPos, position);
@@ -384,10 +431,14 @@ export class SmartNavigationStrategy extends BaseStrategy {
         }
 
         // Kiểm tra có thể đứng ở đây không
-        const canStand = !map.walls.some(
-          (wall) =>
-            wall.position.x === position.x && wall.position.y === position.y
-        );
+        const canStand =
+          !map.walls.some(
+            (wall) =>
+              wall.position.x === position.x && wall.position.y === position.y
+          ) &&
+          !(map.chests || []).some(
+            (c) => c.position.x === position.x && c.position.y === position.y
+          );
 
         if (canStand) {
           const dangerScore = this.calculateDangerScore(position, gameState);

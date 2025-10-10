@@ -139,7 +139,8 @@ export interface Wall {
 export interface GameMap {
   width: number;
   height: number;
-  walls: Wall[];
+  walls: Wall[]; // solid walls
+  chests: Wall[]; // destructible chests
   items: Item[];
   bombs: Bomb[];
   bots: Bot[];

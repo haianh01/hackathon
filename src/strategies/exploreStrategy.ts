@@ -101,6 +101,9 @@ export class ExploreStrategy extends BaseStrategy {
           gameState.map.walls.some(
             (wall) =>
               wall.position.x === checkPos.x && wall.position.y === checkPos.y
+          ) ||
+          (gameState.map.chests || []).some(
+            (c) => c.position.x === checkPos.x && c.position.y === checkPos.y
           )
         ) {
           count++;

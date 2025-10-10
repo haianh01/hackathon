@@ -12,9 +12,15 @@ export function isPositionBlocked(
   position: Position,
   gameState: GameState
 ): boolean {
-  return gameState.map.walls.some((wall) =>
+  // Blocked if there's a solid wall or an active chest at the position
+  const solidWall = gameState.map.walls.some((wall) =>
     positionsEqual(wall.position, position)
   );
+  const chest = (gameState.map.chests || []).some((c) =>
+    positionsEqual(c.position, position)
+  );
+
+  return solidWall || chest;
 }
 
 /**
@@ -71,7 +77,8 @@ export function isPositionInBombRange(
     );
 
     for (const flamePos of flamePositions) {
-      // Nếu gặp tường thì ngừng lan truyền
+      // Nếu gặp tường cứng thì ngừng lan truyền; nếu gặp chest thì chest bị ảnh hưởng
+      // chest _vẫn_ chặn flame tiếp tục vì chest có kích thước ô
       if (isPositionBlocked(flamePos, gameState)) {
         break;
       }
@@ -213,6 +220,11 @@ export function isPositionCollidingWithWalls(
   // Kiểm tra va chạm với mỗi tường/rương
   for (const wall of gameState.map.walls) {
     if (checkBoxCollision(position, botSize, wall.position, 40)) {
+      return true;
+    }
+  }
+  for (const chest of gameState.map.chests || []) {
+    if (checkBoxCollision(position, botSize, chest.position, 40)) {
       return true;
     }
   }

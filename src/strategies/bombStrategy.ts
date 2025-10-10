@@ -39,29 +39,63 @@ export class BombStrategy extends BaseStrategy {
       return null; // Không đặt bom nếu đã có bom tại vị trí này
     }
 
-    // Tính điểm lợi ích của việc đặt bom
-    const bombBenefit = this.calculateBombBenefit(gameState);
+    // ✅ KIỂM TRA NGAY: Bot có đứng cạnh rương không?
+    const nearbyChests = this.findNearbyChests(gameState);
+    console.log(
+      `💣 BombStrategy: Kiểm tra rương gần - tìm thấy ${nearbyChests.length} rương`
+    );
 
-    if (bombBenefit.score <= 0) {
-      return null;
+    if (nearbyChests.length > 0) {
+      console.log(
+        `💣 BombStrategy: ✅ Phát hiện ${nearbyChests.length} rương trong tầm bom!`
+      );
+      console.log(
+        `💣 BombStrategy: Vị trí bot: (${botPosition.x}, ${botPosition.y})`
+      );
+      console.log(`💣 BombStrategy: Rương:`, nearbyChests);
+
+      // Kiểm tra có lối thoát không
+      const escapeRoute = this.findEscapeRoute(gameState);
+      if (escapeRoute && escapeRoute.length > 0) {
+        console.log(`💣 BombStrategy: ✅ Có lối thoát - ĐẶT BOM!`);
+        return this.createDecision(
+          BotAction.BOMB,
+          this.priority + 15,
+          `Đặt bom phá ${nearbyChests.length} rương gần đây`
+        );
+      } else {
+        console.log(`💣 BombStrategy: ❌ Không có lối thoát - BỎ QUA`);
+      }
     }
 
-    // Kiểm tra khả năng thoát hiểm sau khi đặt bom
+    // Kiểm tra khả năng thoát hiểm TRƯỚC (quan trọng nhất)
     const escapeRoute = this.findEscapeRoute(gameState);
-    if (!escapeRoute) {
+    if (!escapeRoute || escapeRoute.length === 0) {
+      console.log(`💣 BombStrategy: Không có lối thoát an toàn`);
       return null; // Không đặt bom nếu không có lối thoát
+    }
+
+    // Tính điểm lợi ích của việc đặt bom
+    const bombBenefit = this.calculateBombBenefit(gameState, escapeRoute);
+
+    if (bombBenefit.score <= 0) {
+      console.log(`💣 BombStrategy: ${bombBenefit.reason}`);
+      return null;
     }
 
     return this.createDecision(
       BotAction.BOMB,
-      this.priority + bombBenefit.score,
-      `Đặt bom tại (${botPosition.x}, ${botPosition.y}): ${bombBenefit.reason}`
+      this.priority + Math.min(bombBenefit.score, 20), // Cap max bonus at 20
+      `Đặt bom: ${bombBenefit.reason}`
     );
   }
   /**
    * Tính toán lợi ích của việc đặt bom tại vị trí hiện tại
    */
-  private calculateBombBenefit(gameState: GameState): {
+  private calculateBombBenefit(
+    gameState: GameState,
+    escapeRoute: Position[]
+  ): {
     score: number;
     reason: string;
   } {
@@ -79,19 +113,16 @@ export class BombStrategy extends BaseStrategy {
       map
     );
 
-    // Điểm cho việc phá tường/chest
+    // Điểm cho việc phá tường/chest (chests array)
     const destructibleWalls = affectedPositions.filter((pos) => {
-      const cell = map.walls.find(
-        (wall) =>
-          wall.position.x === pos.x &&
-          wall.position.y === pos.y &&
-          wall.isDestructible
+      const cell = (map.chests || []).find(
+        (c) => c.position.x === pos.x && c.position.y === pos.y
       );
       return cell !== undefined;
     });
 
     if (destructibleWalls.length > 0) {
-      score += destructibleWalls.length * 20;
+      score += destructibleWalls.length * 30; // Tăng lên để ưu tiên phá tường
       reasons.push(`phá ${destructibleWalls.length} tường`);
     }
 
@@ -104,17 +135,17 @@ export class BombStrategy extends BaseStrategy {
     });
 
     if (threatenedEnemies.length > 0) {
-      score += threatenedEnemies.length * 50;
+      score += threatenedEnemies.length * 80; // Tăng lên để ưu tiên tấn công
       reasons.push(`tấn công ${threatenedEnemies.length} địch`);
     }
 
-    // Điểm cho việc kiểm soát không gian
-    const controlledArea = affectedPositions.length;
-    score += controlledArea * 2;
+    // ❌ BỎ điểm kiểm soát không gian - chỉ đặt bom khi có mục tiêu rõ ràng
+    // const controlledArea = affectedPositions.length;
+    // score += controlledArea * 2;
 
     // Trừ điểm nếu có nguy cơ tự sát
-    const selfThreat = this.calculateSelfThreat(gameState, affectedPositions);
-    score -= selfThreat * 30;
+    const selfThreat = this.calculateSelfThreat(escapeRoute);
+    score -= selfThreat * 20; // Giảm penalty để không quá strict
 
     // Kiểm tra xem có item gần đó không (tránh phá item)
     const nearbyItems = map.items.filter((item) =>
@@ -124,13 +155,21 @@ export class BombStrategy extends BaseStrategy {
     );
 
     if (nearbyItems.length > 0) {
-      score -= nearbyItems.length * 15; // Trừ điểm nếu có thể phá item
+      score -= nearbyItems.length * 25; // Tăng penalty để tránh phá item quý
       reasons.push(`có thể phá ${nearbyItems.length} item`);
+    }
+
+    // ✅ Chỉ đặt bom khi có lý do rõ ràng (phá tường hoặc tấn công)
+    if (reasons.length === 0 || score < 10) {
+      return {
+        score: 0, // Không đủ lý do để đặt bom
+        reason: "không có mục tiêu có giá trị",
+      };
     }
 
     return {
       score,
-      reason: reasons.length > 0 ? reasons.join(", ") : "kiểm soát khu vực",
+      reason: reasons.join(", "),
     };
   }
 
@@ -144,11 +183,85 @@ export class BombStrategy extends BaseStrategy {
     }
 
     // Kiểm tra có tường không
-    const wall = map.walls.find(
+    // If there's a solid wall here, invalid. chests are destructible so ok.
+    const solid = map.walls.find(
       (w: Wall) => w.position.x === position.x && w.position.y === position.y
     );
+    if (solid && !solid.isDestructible) return false;
+    // if chest exists here, it's considered destructible and thus valid to place bomb on
+    return true;
+  }
 
-    return !wall || wall.isDestructible;
+  /**
+   * Tìm các rương gần vị trí bot (trong tầm bom)
+   */
+  private findNearbyChests(gameState: GameState): Position[] {
+    const { currentBot, map } = gameState;
+    const botPosition = currentBot.position;
+    const flameRange = currentBot.flameRange;
+    const nearbyChests: Position[] = [];
+
+    // Lấy danh sách chests (có thể là chests hoặc destructibleWalls)
+    const chestList = map.chests || [];
+    console.log(
+      "%c🤪 ~ file: bombStrategy.ts:205 [] -> chestList : ",
+      "color: #aded63",
+      chestList
+    );
+
+    // Kiểm tra 4 hướng chính
+    const directions = [
+      { dx: 0, dy: -1 }, // UP
+      { dx: 0, dy: 1 }, // DOWN
+      { dx: -1, dy: 0 }, // LEFT
+      { dx: 1, dy: 0 }, // RIGHT
+    ];
+
+    for (const dir of directions) {
+      for (let i = 1; i <= flameRange; i++) {
+        const checkPos = {
+          x: botPosition.x + dir.dx * i,
+          y: botPosition.y + dir.dy * i,
+        };
+
+        // Tìm chest tại vị trí này
+        const chest = chestList.find(
+          (c: any) => c.position.x === checkPos.x && c.position.y === checkPos.y
+        );
+
+        if (chest) {
+          nearbyChests.push(chest.position);
+          break; // Dừng kiểm tra hướng này (chest chặn)
+        }
+
+        // ✅ FALLBACK: Nếu không có chests, tìm destructible walls
+        const destructibleWall = map.walls.find(
+          (w: Wall) =>
+            w.position.x === checkPos.x &&
+            w.position.y === checkPos.y &&
+            w.isDestructible
+        );
+
+        if (destructibleWall) {
+          nearbyChests.push(destructibleWall.position);
+          break; // Dừng kiểm tra hướng này
+        }
+
+        // Kiểm tra tường cứng (chặn flame)
+        const solidWall = map.walls.find(
+          (w: Wall) =>
+            w.position.x === checkPos.x &&
+            w.position.y === checkPos.y &&
+            !w.isDestructible
+        );
+
+        if (solidWall) {
+          break; // Dừng kiểm tra hướng này
+        }
+      }
+    }
+
+    return nearbyChests;
   }
 
   /**
@@ -181,15 +294,20 @@ export class BombStrategy extends BaseStrategy {
         }
 
         // Kiểm tra xem có tường không thể phá không
+        // If there's a chest here, add and stop
+        const chest = (map.chests || []).find(
+          (c: any) => c.position.x === pos.x && c.position.y === pos.y
+        );
+        if (chest) {
+          positions.push(pos);
+          break;
+        }
+
         const wall = map.walls.find(
           (w: Wall) => w.position.x === pos.x && w.position.y === pos.y
         );
-
         if (wall) {
-          if (wall.isDestructible) {
-            positions.push(pos); // Thêm tường có thể phá
-          }
-          break; // Dừng lại khi gặp tường
+          break;
         }
 
         positions.push(pos);
@@ -200,22 +318,23 @@ export class BombStrategy extends BaseStrategy {
   }
 
   /**
-   * Tính toán nguy cơ tự sát
+   * Tính toán nguy cơ tự sát dựa trên escape route
    */
-  private calculateSelfThreat(
-    gameState: GameState,
-    affectedPositions: Position[]
-  ): number {
-    const { currentBot } = gameState;
-    const botPosition = currentBot.position;
+  private calculateSelfThreat(escapeRoute: Position[]): number {
+    if (!escapeRoute || escapeRoute.length === 0) {
+      return 10; // Nguy cơ cao nếu không có lối thoát
+    }
 
-    // Bot luôn ở vị trí đặt bom, nhưng có thể di chuyển ra
-    // Giảm penalty vì bot có thể thoát
-    return 0.3; // Giảm xuống để không quá strict
+    if (escapeRoute.length <= 2) {
+      return 5; // Nguy cơ trung bình nếu lối thoát quá gần
+    }
+
+    return 1; // Nguy cơ thấp nếu có lối thoát tốt
   }
 
   /**
    * Tìm lối thoát sau khi đặt bom
+   * Returns array of safe positions (not a path)
    */
   private findEscapeRoute(gameState: GameState): Position[] | null {
     const { currentBot, map } = gameState;
@@ -244,7 +363,7 @@ export class BombStrategy extends BaseStrategy {
 
         if (!isDangerous && this.isValidPosition(pos, map)) {
           const distance = manhattanDistance(botPosition, pos);
-          if (distance <= 4) {
+          if (distance <= 5) {
             // Trong phạm vi có thể thoát được
             safePositions.push(pos);
           }
@@ -256,13 +375,13 @@ export class BombStrategy extends BaseStrategy {
       return null; // Không có vị trí an toàn
     }
 
-    // Tìm đường đi ngắn nhất đến vị trí an toàn gần nhất
-    const nearestSafePosition = safePositions.reduce((nearest, pos) => {
-      const currentDistance = manhattanDistance(botPosition, pos);
-      const nearestDistance = manhattanDistance(botPosition, nearest);
-      return currentDistance < nearestDistance ? pos : nearest;
+    // Sắp xếp theo khoảng cách và trả về danh sách vị trí an toàn
+    safePositions.sort((a, b) => {
+      const distA = manhattanDistance(botPosition, a);
+      const distB = manhattanDistance(botPosition, b);
+      return distA - distB;
     });
 
-    return Pathfinding.findPath(botPosition, nearestSafePosition, gameState);
+    return safePositions; // Return array of safe positions
   }
 }

@@ -81,17 +81,17 @@ export class GameEngine {
    * Parse dữ liệu từ server thành GameState
    */
   private parseGameData(data: any, currentBotId?: string): GameState {
-    console.log(
-      "%c🤪 ~ file: gameEngine.ts:66 [] -> data : ",
-      "color: #ac4d66",
-      data
-    );
+    // console.log(
+    //   "%c🤪 ~ file: gameEngine.ts:66 [] -> data : ",
+    //   "color: #ac4d66",
+    //   data
+    // );
 
     console.log(`🔍 Parsing game data với currentBotId: ${currentBotId}`);
 
     // Parse map từ server (2D array format)
     const walls = this.parseWallsFromMap(data.map || []);
-    const bots = this.parseBots(data.bombers || [], currentBotId);
+    const bots = this.parseBots(data.bombers || []);
 
     console.log(
       `🔍 Parsed bots:`,
@@ -105,7 +105,8 @@ export class GameEngine {
     const map: GameMap = {
       width: 640, // 16 cells * 40 pixels
       height: 640,
-      walls: [...walls, ...chests], // Walls + Chests
+      walls: [...walls], // solid walls
+      chests: [...chests], // destructible chests
       items: items,
       bombs: bombs,
       bots: bots,
@@ -138,6 +139,11 @@ export class GameEngine {
    * Parse walls từ map 2D array (W = Wall, null = empty, C = Chest)
    */
   private parseWallsFromMap(mapData: any[]): Wall[] {
+    // console.log(
+    //   "%c🤪 ~ file: gameEngine.ts:141 [] -> mapData : ",
+    //   "color: #b9e2dc",
+    //   mapData
+    // );
     const walls: Wall[] = [];
     const CELL_SIZE = 40;
 
@@ -197,7 +203,7 @@ export class GameEngine {
   /**
    * Parse bots (bombers)
    */
-  private parseBots(botsData: any[], currentBotId?: string): Bot[] {
+  private parseBots(botsData: any[]): Bot[] {
     return botsData.map((bot) => ({
       id: bot.uid,
       name: bot.name,
@@ -256,6 +262,7 @@ export class GameEngine {
         width: 640,
         height: 640,
         walls: [],
+        chests: [],
         items: [],
         bombs: [],
         bots: [],
