@@ -64,7 +64,7 @@ export class BomberManBot {
       }
     });
     this.socketConnection.onPositionUpdate((x: number, y: number) => {
-      console.log(`📍 Position updated: (${x}, ${y})`);
+      // console.log(`📍 Position updated: (${x}, ${y})`);
     });
 
     // Set up real-time event callbacks
@@ -166,6 +166,11 @@ export class BomberManBot {
       case BotAction.BOMB:
         this.socketConnection.stopContinuousMove();
         this.socketConnection.placeBomb();
+        // Mark bomb placement for immediate escape
+        const currentBot = this.gameEngine.getCurrentBot();
+        if (currentBot) {
+          this.ai.markBombPlaced(currentBot.position);
+        }
         break;
       case BotAction.STOP:
       default:

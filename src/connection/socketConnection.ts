@@ -1,5 +1,6 @@
 import io from "socket.io-client";
 import { Direction, UserResponse, Bomber } from "../types";
+import { MOVE_STEP_SIZE } from "../utils/coordinates";
 
 // Define the Socket type from socket.io-client
 type SocketType = ReturnType<typeof io>;
@@ -129,7 +130,7 @@ export class SocketConnection {
         const oldPos = this.lastConfirmedPosition
           ? `(${this.lastConfirmedPosition.x}, ${this.lastConfirmedPosition.y})`
           : "unknown";
-        console.log(`📍 Position updated: ${oldPos} -> (${data.x}, ${data.y})`);
+        // console.log(`📍 Position updated: ${oldPos} -> (${data.x}, ${data.y})`);
 
         this.lastConfirmedPosition = { x: data.x, y: data.y };
         if (this.myBomberInfo) {
@@ -155,12 +156,12 @@ export class SocketConnection {
       this.onMapUpdateCallback?.(data);
     });
 
-    this.socket.on("user_die_update", (data: any) => {
-      console.log(
-        `💀 Bot ${data.killed.name} was eliminated by ${data.killer.name}!`
-      );
-      this.onUserDieCallback?.(data);
-    });
+    // this.socket.on("user_die_update", (data: any) => {
+    //   console.log(
+    //     `💀 Bot ${data.killed.name} was eliminated by ${data.killer.name}!`
+    //   );
+    //   this.onUserDieCallback?.(data);
+    // });
 
     this.socket.on("chest_destroyed", (data: any) => {
       console.log(`📦 Chest destroyed at (${data.x}, ${data.y})`);
@@ -271,16 +272,15 @@ export class SocketConnection {
     currentPos: { x: number; y: number },
     direction: Direction
   ): { x: number; y: number } {
-    const MOVE_STEP = 1; // Server moves ~1px per tick (empirical value)
     switch (direction) {
       case Direction.UP:
-        return { x: currentPos.x, y: currentPos.y - MOVE_STEP };
+        return { x: currentPos.x, y: currentPos.y - MOVE_STEP_SIZE };
       case Direction.DOWN:
-        return { x: currentPos.x, y: currentPos.y + MOVE_STEP };
+        return { x: currentPos.x, y: currentPos.y + MOVE_STEP_SIZE };
       case Direction.LEFT:
-        return { x: currentPos.x - MOVE_STEP, y: currentPos.y };
+        return { x: currentPos.x - MOVE_STEP_SIZE, y: currentPos.y };
       case Direction.RIGHT:
-        return { x: currentPos.x + MOVE_STEP, y: currentPos.y };
+        return { x: currentPos.x + MOVE_STEP_SIZE, y: currentPos.y };
       default:
         return currentPos;
     }

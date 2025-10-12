@@ -11,5 +11,3 @@ export * from "./defensiveStrategy";
 export * from "./wallBreakerStrategy";
 export * from "./smartNavigationStrategy";
 export * from "./bombStrategy";
-export * from "./alignAndBombStrategy";
-export * from "./chestSeekerStrategy";

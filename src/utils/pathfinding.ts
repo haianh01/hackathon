@@ -1,85 +1,107 @@
 import { GameState, Position, Direction, Bomb } from "../types";
 import { manhattanDistance, getPositionInDirection } from "./position";
+import { MinHeap } from "./minHeap";
+import {
+  CELL_SIZE,
+  MOVE_STEP_SIZE,
+  MOVE_INTERVAL_MS,
+  pixelToCell,
+  pixelToCellIndex,
+  isWithinCellBounds,
+  getMapCellDimensions,
+  createCellIndexKey,
+} from "./coordinates";
 
 /**
- * Pathfinding sử dụng thuật toán A*
+ * Pathfinding sử dụng thuật toán A* với MinHeap optimization
+ * All pathfinding operates on CELL INDICES for performance and consistency
+ *
+ * IMPORTANT: Path results return CELL CENTER positions (not top-left corners)
+ * to ensure safe bot movement and avoid collision issues.
  */
 export class Pathfinding {
   /**
-   * Manhattan distance heuristic for pathfinding.
+   * Manhattan distance heuristic for pathfinding (on cell indices).
    */
   static heuristic(a: Position, b: Position): number {
     return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
   }
+
   /**
    * Tìm đường đi ngắn nhất từ start đến goal
+   * Input positions can be in pixels, will be converted to cell indices internally
    */
   static findPath(
     start: Position,
     goal: Position,
     gameState: GameState
   ): Position[] {
-    const openSet = [start];
+    // Convert pixel positions to cell indices for pathfinding
+    const startCell = pixelToCellIndex(start);
+    const goalCell = pixelToCellIndex(goal);
+
+    const openSet = new MinHeap<Position>();
     const cameFrom = new Map<string, Position>();
     const gScore = new Map<string, number>();
     const fScore = new Map<string, number>();
+    const closedSet = new Set<string>();
 
-    gScore.set(this.positionKey(start), 0);
-    fScore.set(this.positionKey(start), manhattanDistance(start, goal));
+    const startKey = createCellIndexKey(startCell);
+    const goalKey = createCellIndexKey(goalCell);
 
-    while (openSet.length > 0) {
-      // Tìm node có fScore thấp nhất
-      let current = openSet[0]!;
-      let currentIndex = 0;
+    gScore.set(startKey, 0);
+    fScore.set(startKey, this.heuristic(startCell, goalCell));
+    openSet.insert(startCell, fScore.get(startKey) || 0);
 
-      for (let i = 1; i < openSet.length; i++) {
-        const currentF = fScore.get(this.positionKey(openSet[i]!)) || Infinity;
-        const bestF = fScore.get(this.positionKey(current)) || Infinity;
+    while (!openSet.isEmpty()) {
+      const current = openSet.extractMin();
+      if (!current) break;
 
-        if (currentF < bestF) {
-          current = openSet[i]!;
-          currentIndex = i;
-        }
+      const currentKey = createCellIndexKey(current);
+
+      // If we reached the goal
+      if (currentKey === goalKey) {
+        const path = this.reconstructPath(cameFrom, current);
+        // Convert cell indices back to pixel positions (cell centers)
+        return path.map((cellIndex) => ({
+          x: cellIndex.x * CELL_SIZE + CELL_SIZE / 2,
+          y: cellIndex.y * CELL_SIZE + CELL_SIZE / 2,
+        }));
       }
 
-      // Nếu đã đến đích
-      if (current.x === goal.x && current.y === goal.y) {
-        return this.reconstructPath(cameFrom, current);
-      }
+      closedSet.add(currentKey);
 
-      // Loại bỏ current khỏi openSet
-      openSet.splice(currentIndex, 1);
-
-      // Kiểm tra các neighbors
+      // Check neighbors
       const neighbors = this.getNeighbors(current, gameState);
 
       for (const neighbor of neighbors) {
-        const tentativeGScore =
-          (gScore.get(this.positionKey(current)) || 0) + 1;
-        const neighborKey = this.positionKey(neighbor);
+        const neighborKey = createCellIndexKey(neighbor);
+
+        if (closedSet.has(neighborKey)) {
+          continue;
+        }
+
+        const tentativeGScore = (gScore.get(currentKey) || 0) + 1;
 
         if (tentativeGScore < (gScore.get(neighborKey) || Infinity)) {
           cameFrom.set(neighborKey, current);
           gScore.set(neighborKey, tentativeGScore);
-          fScore.set(
-            neighborKey,
-            tentativeGScore + manhattanDistance(neighbor, goal)
-          );
+          const fScoreValue =
+            tentativeGScore + this.heuristic(neighbor, goalCell);
+          fScore.set(neighborKey, fScoreValue);
 
-          if (
-            !openSet.some((pos) => pos.x === neighbor.x && pos.y === neighbor.y)
-          ) {
-            openSet.push(neighbor);
-          }
+          // Update heap (note: our simple heap doesn't support efficient decrease-key,
+          // so we just insert again - the duplicate will be handled by closedSet)
+          openSet.insert(neighbor, fScoreValue);
         }
       }
     }
 
-    return []; // Không tìm thấy đường
+    return []; // No path found
   }
 
   private static positionKey(pos: Position): string {
-    return `${pos.x},${pos.y}`;
+    return createCellIndexKey(pos);
   }
 
   private static reconstructPath(
@@ -87,32 +109,37 @@ export class Pathfinding {
     current: Position
   ): Position[] {
     const path = [current];
+    let currentKey = this.positionKey(current);
 
-    while (cameFrom.has(this.positionKey(current))) {
-      current = cameFrom.get(this.positionKey(current))!;
+    while (cameFrom.has(currentKey)) {
+      current = cameFrom.get(currentKey)!;
       path.unshift(current);
+      currentKey = this.positionKey(current);
     }
 
     return path;
   }
 
   private static getNeighbors(
-    position: Position,
+    cellIndex: Position,
     gameState: GameState
   ): Position[] {
     const neighbors: Position[] = [];
     const directions = [
-      Direction.UP,
-      Direction.DOWN,
-      Direction.LEFT,
-      Direction.RIGHT,
+      { x: 0, y: -1 }, // UP
+      { x: 0, y: 1 }, // DOWN
+      { x: -1, y: 0 }, // LEFT
+      { x: 1, y: 0 }, // RIGHT
     ];
 
-    for (const direction of directions) {
-      const neighbor = getPositionInDirection(position, direction);
+    for (const dir of directions) {
+      const neighbor: Position = {
+        x: cellIndex.x + dir.x,
+        y: cellIndex.y + dir.y,
+      };
 
-      // Kiểm tra neighbor có hợp lệ không
-      if (this.isValidPosition(neighbor, gameState)) {
+      // Check if neighbor is valid
+      if (this.isValidCellIndex(neighbor, gameState)) {
         neighbors.push(neighbor);
       }
     }
@@ -120,63 +147,45 @@ export class Pathfinding {
     return neighbors;
   }
 
-  private static isValidPosition(
-    position: Position,
+  private static isValidCellIndex(
+    cellIndex: Position,
     gameState: GameState
   ): boolean {
-    // Kiểm tra nằm trong bản đồ
+    // Check if within map bounds (using cell dimensions)
     if (
-      position.x < 0 ||
-      position.x >= gameState.map.width ||
-      position.y < 0 ||
-      position.y >= gameState.map.height
+      !isWithinCellBounds(cellIndex, gameState.map.width, gameState.map.height)
     ) {
       return false;
     }
 
-    // Kiểm tra không bị tường cứng hoặc rương (chest) chặn
+    // Convert to pixel position for obstacle checking
+    const pixelPos: Position = {
+      x: cellIndex.x * CELL_SIZE,
+      y: cellIndex.y * CELL_SIZE,
+    };
+
+    // Check for solid walls or chests at this position
     const hasSolidWall = gameState.map.walls.some(
       (wall) =>
-        wall.position.x === position.x &&
-        wall.position.y === position.y &&
+        wall.position.x === pixelPos.x &&
+        wall.position.y === pixelPos.y &&
         !wall.isDestructible
     );
 
     const hasChest = gameState.map.chests.some(
       (chest) =>
-        chest.position.x === position.x && chest.position.y === position.y
+        chest.position.x === pixelPos.x && chest.position.y === pixelPos.y
     );
 
-    if (hasChest) {
-      console.log(
-        `[Pathfinding] Chest found at (${position.x}, ${position.y}). Path blocked.`
-      );
-    }
-
-    const isValid = !(hasSolidWall || hasChest);
-    // console.log(`[Pathfinding] Position (${position.x}, ${position.y}) is ${isValid ? 'valid' : 'invalid'}.`);
-
-    // Cả tường cứng và rương đều chặn đường
-    return isValid;
-  }
-
-  private static getMinHeuristic(
-    position: Position,
-    goals: Position[]
-  ): number {
-    let minDistance = Infinity;
-    for (const goal of goals) {
-      minDistance = Math.min(minDistance, manhattanDistance(position, goal));
-    }
-    return minDistance;
+    return !(hasSolidWall || hasChest);
   }
 
   /**
    * Finds the shortest path from a start position to any of a set of goal positions.
-   * @param start The starting position.
-   * @param goals An array of possible goal positions.
+   * @param start The starting position (pixels).
+   * @param goals An array of possible goal positions (pixels).
    * @param gameState The current game state.
-   * @returns The path as an array of positions, or null if no path is found.
+   * @returns The path as an array of positions in pixels, or null if no path is found.
    */
   static findShortestPath(
     start: Position,
@@ -187,56 +196,74 @@ export class Pathfinding {
       return null;
     }
 
-    const openSet = [start];
+    // Convert all to cell indices
+    const startCell = pixelToCellIndex(start);
+    const goalCells = goals.map(pixelToCellIndex);
+
+    const openSet = new MinHeap<Position>();
     const cameFrom = new Map<string, Position>();
     const gScore = new Map<string, number>();
     const fScore = new Map<string, number>();
+    const closedSet = new Set<string>();
 
-    const goalSet = new Set(goals.map(this.positionKey));
+    const goalSet = new Set(goalCells.map(createCellIndexKey));
 
-    gScore.set(this.positionKey(start), 0);
-    fScore.set(this.positionKey(start), this.getMinHeuristic(start, goals));
+    const startKey = createCellIndexKey(startCell);
+    gScore.set(startKey, 0);
+    fScore.set(startKey, this.getMinHeuristic(startCell, goalCells));
+    openSet.insert(startCell, fScore.get(startKey) || 0);
 
-    while (openSet.length > 0) {
-      let current = openSet[0]!;
-      let currentIndex = 0;
-      for (let i = 1; i < openSet.length; i++) {
-        if (
-          (fScore.get(this.positionKey(openSet[i]!)) || Infinity) <
-          (fScore.get(this.positionKey(current)) || Infinity)
-        ) {
-          current = openSet[i]!;
-          currentIndex = i;
-        }
-      }
+    while (!openSet.isEmpty()) {
+      const current = openSet.extractMin();
+      if (!current) break;
 
-      const currentKey = this.positionKey(current);
+      const currentKey = createCellIndexKey(current);
+
       if (goalSet.has(currentKey)) {
-        return this.reconstructPath(cameFrom, current);
+        const path = this.reconstructPath(cameFrom, current);
+        // Convert back to pixels (cell centers)
+        return path.map((cellIndex) => ({
+          x: cellIndex.x * CELL_SIZE + CELL_SIZE / 2,
+          y: cellIndex.y * CELL_SIZE + CELL_SIZE / 2,
+        }));
       }
 
-      openSet.splice(currentIndex, 1);
+      closedSet.add(currentKey);
 
       const neighbors = this.getNeighbors(current, gameState);
       for (const neighbor of neighbors) {
+        const neighborKey = createCellIndexKey(neighbor);
+
+        if (closedSet.has(neighborKey)) {
+          continue;
+        }
+
         const tentativeGScore = (gScore.get(currentKey) || 0) + 1;
-        const neighborKey = this.positionKey(neighbor);
 
         if (tentativeGScore < (gScore.get(neighborKey) || Infinity)) {
           cameFrom.set(neighborKey, current);
           gScore.set(neighborKey, tentativeGScore);
-          fScore.set(
-            neighborKey,
-            tentativeGScore + this.getMinHeuristic(neighbor, goals)
-          );
-          if (!openSet.some((p) => this.positionKey(p) === neighborKey)) {
-            openSet.push(neighbor);
-          }
+          const fScoreValue =
+            tentativeGScore + this.getMinHeuristic(neighbor, goalCells);
+          fScore.set(neighborKey, fScoreValue);
+
+          openSet.insert(neighbor, fScoreValue);
         }
       }
     }
 
     return null; // No path found
+  }
+
+  private static getMinHeuristic(
+    cellIndex: Position,
+    goalCells: Position[]
+  ): number {
+    let minDistance = Infinity;
+    for (const goal of goalCells) {
+      minDistance = Math.min(minDistance, this.heuristic(cellIndex, goal));
+    }
+    return minDistance;
   }
 }
 
@@ -297,145 +324,261 @@ export function calculatePositionScore(
 }
 
 /**
- * Chuyển vị trí pixel sang vị trí ô (cell) căn giữa theo kích thước ô (default 40px)
+ * Chuyển vị trí pixel sang vị trí ô (cell) căn giữa theo kích thước ô
+ * @deprecated Use coordinates.pixelToCell instead
  */
-export function toCellPosition(pos: Position, cellSize = 40): Position {
-  return {
-    x: Math.round(pos.x / cellSize) * cellSize,
-    y: Math.round(pos.y / cellSize) * cellSize,
-  };
+export function toCellPosition(pos: Position, cellSize = CELL_SIZE): Position {
+  return pixelToCell(pos);
 }
 
 /**
  * Tính danh sách ô bị ảnh hưởng bởi vụ nổ của 1 quả bom (conservative)
  * Explosion sẽ lan theo 4 hướng, dừng khi gặp tường cứng.
+ * Returns cell indices as keys
  */
 export function computeExplosionCells(
   bomb: Bomb,
   gameState: GameState,
-  cellSize = 40
+  cellSize = CELL_SIZE
 ): Set<string> {
   const unsafe = new Set<string>();
 
-  const bombCell = toCellPosition(bomb.position, cellSize);
-  const key = (p: Position) => `${p.x},${p.y}`;
+  // Convert bomb position to cell index
+  const bombCellIndex = pixelToCellIndex(bomb.position);
+  const key = (cellIdx: Position) => createCellIndexKey(cellIdx);
 
-  unsafe.add(key(bombCell));
+  console.log(`💥 DEBUG computeExplosionCells:`);
+  console.log(`   Bomb at pixel: (${bomb.position.x}, ${bomb.position.y})`);
+  console.log(`   Bomb cell index: (${bombCellIndex.x}, ${bombCellIndex.y})`);
+  console.log(`   Flame range: ${bomb.flameRange}`);
+
+  unsafe.add(key(bombCellIndex));
 
   const directions = [
-    Direction.UP,
-    Direction.DOWN,
-    Direction.LEFT,
-    Direction.RIGHT,
+    { x: 0, y: -1 }, // UP
+    { x: 0, y: 1 }, // DOWN
+    { x: -1, y: 0 }, // LEFT
+    { x: 1, y: 0 }, // RIGHT
   ];
+
   for (const dir of directions) {
-    let current = { ...bombCell };
+    console.log(`   🔥 Direction: dx=${dir.x}, dy=${dir.y}`);
+    let currentCell = { ...bombCellIndex };
+
     for (let i = 1; i <= (bomb.flameRange || 2); i++) {
-      current = getPositionInDirection(current, dir, cellSize);
+      currentCell = {
+        x: currentCell.x + dir.x,
+        y: currentCell.y + dir.y,
+      };
+
+      console.log(
+        `      Range ${i}: cell (${currentCell.x}, ${currentCell.y})`
+      );
 
       // Mark the cell as unsafe
-      unsafe.add(key(current));
+      unsafe.add(key(currentCell));
 
-      // `If there is a solid w`all at this cell, stop propagation
+      // Check for solid wall at this cell (convert to pixel for checking)
+      const pixelPos = {
+        x: currentCell.x * CELL_SIZE,
+        y: currentCell.y * CELL_SIZE,
+      };
+
       const isSolidWall = gameState.map.walls.some(
         (w) =>
-          w.position.x === current.x &&
-          w.position.y === current.y &&
+          w.position.x === pixelPos.x &&
+          w.position.y === pixelPos.y &&
           !w.isDestructible
       );
-      if (isSolidWall) break;
+
+      if (isSolidWall) {
+        console.log(
+          `      BLOCKED by solid wall at (${pixelPos.x}, ${pixelPos.y})`
+        );
+        break;
+      }
     }
   }
 
+  console.log(`   💥 Total unsafe cells: ${unsafe.size}`);
+  console.log(`   💥 Unsafe cell list: [${Array.from(unsafe).join(", ")}]`);
   return unsafe;
 }
 
 /**
  * Kiểm tra xem bot có thể thoát khỏi vùng bị nổ của 1 quả bom hay không,
- * xét đến tường và rương cản đường bằng cách dùng A* trên lưới ô 40px.
+ * xét đến tường và rương cản đường bằng cách dùng BFS trên lưới ô.
  * Trả về true nếu tồn tại đường đi đến ô an toàn trước khi bom nổ.
  */
 export function canEscapeFromBomb(
   startPos: Position,
   bomb: Bomb,
   gameState: GameState,
-  cellSize = 40,
-  moveIntervalMs = 200
+  cellSize = CELL_SIZE,
+  moveIntervalMs = MOVE_INTERVAL_MS
 ): boolean {
-  // Fast BFS-based escape check (explore outward from start). This avoids
-  // many A* calls and early-exits as soon as a safe reachable cell is found.
-  const startCell = toCellPosition(startPos, cellSize);
+  console.log(`🔍 DEBUG canEscapeFromBomb: Starting detailed analysis...`);
+  console.log(`   Start position: (${startPos.x}, ${startPos.y})`);
+  console.log(`   Bomb position: (${bomb.position.x}, ${bomb.position.y})`);
+  console.log(`   Bomb range: ${bomb.flameRange}, time: ${bomb.timeRemaining}`);
+
+  // Fast BFS-based escape check
+  const startCellIndex = pixelToCellIndex(startPos);
+  console.log(
+    `   Start cell index: (${startCellIndex.x}, ${startCellIndex.y})`
+  );
+
   const unsafe = computeExplosionCells(bomb, gameState, cellSize);
-  const startKey = `${startCell.x},${startCell.y}`;
+  console.log(`   Unsafe cells count: ${unsafe.size}`);
+
+  const startKey = createCellIndexKey(startCellIndex);
+  console.log(`   Start key: ${startKey}`);
 
   // If already safe
-  if (!unsafe.has(startKey)) return true;
+  if (!unsafe.has(startKey)) {
+    console.log(`   ✅ Already safe! Start position not in danger zone`);
+    return true;
+  }
 
-  // BFS queue: each entry is {pos, steps} where steps = number of cell moves from start
-  const queue: { pos: Position; steps: number }[] = [
-    { pos: startCell, steps: 0 },
+  console.log(`   ⚠️ Start position IS in danger zone, need to find escape`);
+
+  // BFS queue: each entry is {cellIndex, steps} where steps = number of cell moves from start
+  const queue: { cellIndex: Position; steps: number }[] = [
+    { cellIndex: startCellIndex, steps: 0 },
   ];
   const visited = new Set<string>([startKey]);
 
-  // Speed: pixels moved per "move tick" (1px per unit of speed)
-  const pixelsPerMove = (gameState.currentBot.speed || 1) * 1;
+  // Calculate movement parameters
+  const botSpeed = gameState.currentBot.speed || 1;
+  const pixelsPerMove = botSpeed * MOVE_STEP_SIZE; // More accurate calculation
   const timeRemaining = bomb.timeRemaining || 5000;
 
-  // Safety cap to avoid pathological long loops (map is small, but keep guard)
-  const maxVisits = Math.max(
-    512,
-    (gameState.map.width / cellSize) * (gameState.map.height / cellSize) * 4
+  console.log(
+    `   🏃 Movement params: speed=${botSpeed}, pixelsPerMove=${pixelsPerMove}, timeRemaining=${timeRemaining}ms`
   );
+
+  // Safety cap to avoid infinite loops
+  const mapCellDims = getMapCellDimensions(
+    gameState.map.width,
+    gameState.map.height
+  );
+  const maxVisits = Math.max(512, mapCellDims.width * mapCellDims.height * 4);
   let visits = 0;
 
   while (queue.length > 0) {
     const node = queue.shift()!;
     visits++;
-    if (visits > maxVisits) break;
+    console.log(
+      `   🔄 Visit ${visits}: Exploring cell (${node.cellIndex.x}, ${node.cellIndex.y}) at steps ${node.steps}`
+    );
+
+    if (visits > maxVisits) {
+      console.log(`   ⚠️ Max visits reached: ${maxVisits}`);
+      break;
+    }
 
     // Explore 4-direction neighbors
-    const dirs = [
-      Direction.UP,
-      Direction.DOWN,
-      Direction.LEFT,
-      Direction.RIGHT,
+    const directions = [
+      { x: 0, y: -1 }, // UP
+      { x: 0, y: 1 }, // DOWN
+      { x: -1, y: 0 }, // LEFT
+      { x: 1, y: 0 }, // RIGHT
     ];
-    for (const dir of dirs) {
-      const next = getPositionInDirection(node.pos, dir, cellSize);
-      const key = `${next.x},${next.y}`;
-      if (visited.has(key)) continue;
+
+    for (const dir of directions) {
+      const nextCellIndex = {
+        x: node.cellIndex.x + dir.x,
+        y: node.cellIndex.y + dir.y,
+      };
+      const key = createCellIndexKey(nextCellIndex);
+
+      console.log(
+        `      Checking neighbor: (${nextCellIndex.x}, ${nextCellIndex.y}), key: ${key}`
+      );
+
+      if (visited.has(key)) {
+        console.log(`      ⏭️ Already visited`);
+        continue;
+      }
       visited.add(key);
 
       // bounds check
       if (
-        next.x < 0 ||
-        next.x >= gameState.map.width ||
-        next.y < 0 ||
-        next.y >= gameState.map.height
-      )
+        !isWithinCellBounds(
+          nextCellIndex,
+          gameState.map.width,
+          gameState.map.height
+        )
+      ) {
+        console.log(`      ❌ Out of bounds`);
         continue;
+      }
 
-      // wall/chest blocker
-      const isBlocked = gameState.map.walls.some(
-        (w) => w.position.x === next.x && w.position.y === next.y
-      );
-      if (isBlocked) continue;
+      // wall/chest blocker check
+      const pixelPos = {
+        x: nextCellIndex.x * CELL_SIZE,
+        y: nextCellIndex.y * CELL_SIZE,
+      };
+
+      const isBlocked =
+        gameState.map.walls.some(
+          (w) => w.position.x === pixelPos.x && w.position.y === pixelPos.y
+        ) ||
+        gameState.map.chests.some(
+          (c) => c.position.x === pixelPos.x && c.position.y === pixelPos.y
+        );
+
+      if (isBlocked) {
+        console.log(
+          `      🚧 Blocked by wall/chest at (${pixelPos.x}, ${pixelPos.y})`
+        );
+        continue;
+      }
 
       const nextSteps = node.steps + 1;
-      const distancePx = nextSteps * cellSize; // pixels needed to reach this cell
+      const distancePx = nextSteps * CELL_SIZE; // pixels needed to reach this cell
+
+      console.log(
+        `      ✅ Valid neighbor, distance: ${distancePx}px, unsafe: ${unsafe.has(
+          key
+        )}`
+      );
 
       // If this cell is not in unsafe set, evaluate time to reach
       if (!unsafe.has(key)) {
-        const movesNeeded = Math.ceil(distancePx / pixelsPerMove);
-        const timeNeededMs = movesNeeded * moveIntervalMs;
-        if (timeNeededMs <= timeRemaining) return true; // found escape
-        // else: even though safe, cannot reach in time; still continue exploring other cells
+        // FIXED: Sử dụng tính toán thời gian thực tế
+        // Bot di chuyển với continuous movement ~17ms/command
+        // Với tốc độ 3px/command, trong 1 giây có thể di chuyển ~180px
+        const pixelsPerSecond = (1000 / 17) * pixelsPerMove; // ~176 px/s
+        const timeNeededMs = (distancePx / pixelsPerSecond) * 1000;
+
+        console.log(
+          `     🎯 SAFE CELL FOUND: (${nextCellIndex.x}, ${nextCellIndex.y})`
+        );
+        console.log(`        Distance: ${distancePx}px`);
+        console.log(`        Speed: ${pixelsPerSecond.toFixed(1)}px/s`);
+        console.log(`        Time needed: ${timeNeededMs.toFixed(0)}ms`);
+        console.log(`        Time remaining: ${timeRemaining}ms`);
+
+        if (timeNeededMs <= timeRemaining) {
+          console.log(`     ✅ CAN ESCAPE! Found safe position in time`);
+          return true; // found escape
+        } else {
+          console.log(
+            `     ❌ Too slow! Need ${timeNeededMs.toFixed(
+              0
+            )}ms but only have ${timeRemaining}ms`
+          );
+        }
+        // else: even though safe, cannot reach in time; continue exploring
       }
 
       // enqueue for further exploration
-      queue.push({ pos: next, steps: nextSteps });
+      console.log(`      📝 Adding to queue for further exploration`);
+      queue.push({ cellIndex: nextCellIndex, steps: nextSteps });
     }
   }
 
+  console.log(`   ❌ NO ESCAPE FOUND after ${visits} visits`);
   return false;
 }

@@ -4,6 +4,7 @@ import {
   positionsEqual,
   getPositionsInLine,
 } from "./position";
+import { isWithinPixelBounds } from "./coordinates";
 
 /**
  * Kiểm tra xem vị trí có bị tường chặn không
@@ -12,13 +13,42 @@ export function isPositionBlocked(
   position: Position,
   gameState: GameState
 ): boolean {
-  // Blocked if there's a solid wall or an active chest at the position
-  const solidWall = gameState.map.walls.some((wall) =>
-    positionsEqual(wall.position, position)
+  const OBJECT_SIZE = 40; // Standard object size in pixels
+  const TOLERANCE = 20; // Half object size for overlap detection
+
+  // Check solid walls with overlap detection
+  const solidWall = gameState.map.walls.some(
+    (wall) =>
+      Math.abs(wall.position.x - position.x) < TOLERANCE &&
+      Math.abs(wall.position.y - position.y) < TOLERANCE
   );
-  const chest = (gameState.map.chests || []).some((c) =>
-    positionsEqual(c.position, position)
+
+  // Check chests with overlap detection
+  const chest = (gameState.map.chests || []).some(
+    (c) =>
+      Math.abs(c.position.x - position.x) < TOLERANCE &&
+      Math.abs(c.position.y - position.y) < TOLERANCE
   );
+
+  if (solidWall || chest) {
+    console.log(
+      `🚧 Position (${position.x}, ${position.y}) is BLOCKED by ${
+        solidWall ? "wall" : "chest"
+      }`
+    );
+    if (chest) {
+      const blockingChest = (gameState.map.chests || []).find(
+        (c) =>
+          Math.abs(c.position.x - position.x) < TOLERANCE &&
+          Math.abs(c.position.y - position.y) < TOLERANCE
+      );
+      if (blockingChest) {
+        console.log(
+          `  Blocking chest at: (${blockingChest.position.x}, ${blockingChest.position.y})`
+        );
+      }
+    }
+  }
 
   return solidWall || chest;
 }
@@ -56,8 +86,13 @@ export function isPositionInBombRange(
   bomb: Bomb,
   gameState: GameState
 ): boolean {
-  // Kiểm tra cùng vị trí với bom
-  if (positionsEqual(position, bomb.position)) {
+  const FLAME_TOLERANCE = 20; // Half cell size for flame overlap detection
+
+  // Kiểm tra cùng vị trí với bom (với tolerance)
+  if (
+    Math.abs(position.x - bomb.position.x) < FLAME_TOLERANCE &&
+    Math.abs(position.y - bomb.position.y) < FLAME_TOLERANCE
+  ) {
     return true;
   }
 
@@ -77,14 +112,18 @@ export function isPositionInBombRange(
     );
 
     for (const flamePos of flamePositions) {
+      // Check if position overlaps with flame position
+      if (
+        Math.abs(position.x - flamePos.x) < FLAME_TOLERANCE &&
+        Math.abs(position.y - flamePos.y) < FLAME_TOLERANCE
+      ) {
+        return true;
+      }
+
       // Nếu gặp tường cứng thì ngừng lan truyền; nếu gặp chest thì chest bị ảnh hưởng
       // chest _vẫn_ chặn flame tiếp tục vì chest có kích thước ô
       if (isPositionBlocked(flamePos, gameState)) {
         break;
-      }
-
-      if (positionsEqual(position, flamePos)) {
-        return true;
       }
     }
   }
@@ -123,27 +162,33 @@ export function getSafeAdjacentPositions(
 
 /**
  * Kiểm tra xem có thể di chuyển đến vị trí không
+ * Uses pixel coordinates for precise bounds checking
  */
 export function canMoveTo(position: Position, gameState: GameState): boolean {
-  // Kiểm tra nằm trong bản đồ
+  // Check if within map bounds (pixel-based)
   if (
-    position.x < 0 ||
-    position.x >= gameState.map.width ||
-    position.y < 0 ||
-    position.y >= gameState.map.height
+    !isWithinPixelBounds(position, gameState.map.width, gameState.map.height)
   ) {
     return false;
   }
 
-  // Kiểm tra không bị tường chặn
+  // Check if blocked by walls or chests
   if (isPositionBlocked(position, gameState)) {
     return false;
   }
 
-  // Kiểm tra không có bot khác
+  // Check if another bot is at this position with overlap detection
+  const PLAYER_SIZE = 30; // Player collision size (smaller than objects)
   if (
-    gameState.enemies.some((enemy) => positionsEqual(enemy.position, position))
+    gameState.enemies.some(
+      (enemy) =>
+        Math.abs(enemy.position.x - position.x) < PLAYER_SIZE &&
+        Math.abs(enemy.position.y - position.y) < PLAYER_SIZE
+    )
   ) {
+    console.log(
+      `🤖 Position (${position.x}, ${position.y}) is BLOCKED by enemy player`
+    );
     return false;
   }
 
@@ -256,17 +301,14 @@ export function canMoveToPositionPrecise(
   position: Position,
   gameState: GameState
 ): boolean {
-  // Kiểm tra nằm trong bản đồ
+  // Check if within map bounds (pixel-based)
   if (
-    position.x < 0 ||
-    position.x >= gameState.map.width ||
-    position.y < 0 ||
-    position.y >= gameState.map.height
+    !isWithinPixelBounds(position, gameState.map.width, gameState.map.height)
   ) {
     return false;
   }
 
-  // Kiểm tra không va chạm với tường
+  // Check for wall collision
   if (isPositionCollidingWithWalls(position, gameState)) {
     return false;
   }

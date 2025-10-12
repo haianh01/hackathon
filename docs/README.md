@@ -67,6 +67,14 @@ Tài liệu đầy đủ cho Bomberman Bot - Hackathon 2025
 - Timing strategy
 - Known issues & fixes
 
+### 🔧 [Coordinate System Fixes](./COORDINATE_SYSTEM_FIXES.md)
+**Sửa lỗi hệ thống tọa độ (10/12/2025)**
+- Unit consistency (pixels vs cells)
+- Pathfinding performance optimization
+- Bounds checking fixes
+- MinHeap implementation
+- Movement calculations
+
 ### 🔧 [Movement Fix](./MOVEMENT_FIX.md)
 **Sửa lỗi movement**
 - Movement issues
@@ -97,6 +105,7 @@ docs/
 ├── POSITION_TRACKING.md         # Game: Position tracking
 ├── MOVEMENT_GUIDE.md            # Game: Movement system
 ├── BOMB_STRATEGY_FIX.md         # Game: Bomb strategy
+├── COORDINATE_SYSTEM_FIXES.md   # Tech: Coordinate system fixes
 ├── MOVEMENT_FIX.md              # Game: Movement fixes
 │
 └── HACKATHON_DEV_DOC.md         # Dev: Development guide
@@ -139,6 +148,13 @@ docs/
 | **Deployment** | ✅ Complete | README.md, HACKATHON_DEV_DOC.md |
 
 ## 🔄 Update History
+
+### 2025-10-12
+- ✅ Added COORDINATE_SYSTEM_FIXES.md
+- ✅ Fixed unit consistency issues (pixels vs cells)
+- ✅ Implemented MinHeap for pathfinding performance
+- ✅ Fixed bounds checking throughout codebase
+- ✅ Improved movement time calculations
 
 ### 2025-10-10
 - ✅ Added RECENT_UPDATES.md

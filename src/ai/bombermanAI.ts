@@ -1,4 +1,10 @@
-import { GameState, BotDecision, BotAction, Direction } from "../types";
+import {
+  GameState,
+  BotDecision,
+  BotAction,
+  Direction,
+  Position,
+} from "../types";
 import {
   BotStrategy,
   EscapeStrategy,
@@ -9,8 +15,6 @@ import {
   WallBreakerStrategy,
   SmartNavigationStrategy,
   BombStrategy,
-  AlignAndBombStrategy,
-  ChestSeekerStrategy,
 } from "../strategies";
 
 /**
@@ -18,10 +22,47 @@ import {
  */
 export class BombermanAI {
   private strategies: BotStrategy[];
+  private justPlacedBomb: boolean = false;
+  private bombPlacementTime: number = 0;
+  private bombPlacementPosition: Position | null = null;
 
   constructor() {
     // Initialize all strategies in order of priority
     this.strategies = this.getDefaultStrategies();
+  }
+
+  /**
+   * Mark that we just placed a bomb (for immediate escape trigger)
+   */
+  public markBombPlaced(position: Position): void {
+    this.justPlacedBomb = true;
+    this.bombPlacementTime = Date.now();
+    this.bombPlacementPosition = position;
+    console.log(`💣 AI: Marked bomb placed at (${position.x}, ${position.y})`);
+  }
+
+  /**
+   * Check if we need immediate escape due to recent bomb placement
+   */
+  private needsImmediateEscape(gameState: GameState): boolean {
+    if (!this.justPlacedBomb || !this.bombPlacementPosition) {
+      return false;
+    }
+
+    // Clear the flag after 1 second (bomb should be reflected in gameState by then)
+    if (Date.now() - this.bombPlacementTime > 1000) {
+      this.justPlacedBomb = false;
+      this.bombPlacementPosition = null;
+      return false;
+    }
+
+    // Check if we're close to the bomb placement position
+    const currentPos = gameState.currentBot.position;
+    const distance =
+      Math.abs(currentPos.x - this.bombPlacementPosition.x) +
+      Math.abs(currentPos.y - this.bombPlacementPosition.y);
+
+    return distance < 100; // Within danger range
   }
 
   /**
@@ -30,6 +71,24 @@ export class BombermanAI {
    * @returns The decision for the bot to execute.
    */
   public makeDecision(gameState: GameState): BotDecision {
+    // Check if we need immediate escape due to recent bomb placement
+    if (this.needsImmediateEscape(gameState)) {
+      console.log(`🚨 IMMEDIATE ESCAPE NEEDED after bomb placement!`);
+
+      // Force evaluate EscapeStrategy only
+      const escapeStrategy = this.strategies.find(
+        (s) => s.name === "Escape"
+      ) as EscapeStrategy;
+      if (escapeStrategy) {
+        // Temporarily override the danger detection for immediate escape
+        const emergencyDecision = escapeStrategy.handleEmergency(gameState);
+        if (emergencyDecision) {
+          console.log(`🏃 EMERGENCY ESCAPE: ${emergencyDecision.reason}`);
+          return emergencyDecision;
+        }
+      }
+    }
+
     const decisions: BotDecision[] = this.strategies
       .map((strategy) => {
         try {
@@ -53,7 +112,19 @@ export class BombermanAI {
     // Sort by priority (highest first)
     decisions.sort((a, b) => b.priority - a.priority);
 
+    console.log(`\n🧠 === AI DECISION MAKING ===`);
+    console.log(`📊 Available decisions: ${decisions.length}`);
+    decisions.forEach((decision, index) => {
+      console.log(
+        `  ${index + 1}. ${decision.reason} (Priority: ${decision.priority})`
+      );
+    });
+
     const bestDecision = decisions[0]!;
+    console.log(
+      `🏆 SELECTED: ${bestDecision.reason} (Priority: ${bestDecision.priority})`
+    );
+    console.log(`🧠 === AI DECISION MAKING END ===\n`);
 
     console.log(
       `🤖 Bot decided: ${bestDecision.reason} (Priority: ${bestDecision.priority})`
@@ -127,14 +198,12 @@ export class BombermanAI {
   private getDefaultStrategies(): BotStrategy[] {
     return [
       new ExploreStrategy(), // 40 - Explore the map
-      // new EscapeStrategy(), // 100 - Highest priority - escape danger
-      // new AlignAndBombStrategy(), // 85-100 - Align to grid and bomb chests
+      new EscapeStrategy(), // 100 - Highest priority - escape danger
       // new BombStrategy(), // 80 - Place bombs strategically
       // new AttackStrategy(), // 80 - Attack enemies
       // new DefensiveStrategy(), // 70 - Play defensively
       // new CollectStrategy(), // 60 - Collect items
-      // new ChestSeekerStrategy(), // 55 - Seek nearby chests
-      // new WallBreakerStrategy(), // 50 - Break walls
+      new WallBreakerStrategy(), // 50 - Break walls
       // new SmartNavigationStrategy(), // 30 - Navigate intelligently
     ].sort((a, b) => b.priority - a.priority);
   }

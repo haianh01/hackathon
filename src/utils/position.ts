@@ -1,4 +1,5 @@
 import { Position, Direction } from "../types";
+import { CELL_SIZE, MOVE_STEP_SIZE } from "./coordinates";
 
 /**
  * Tính khoảng cách Manhattan giữa hai điểm
@@ -25,11 +26,12 @@ export function positionsEqual(pos1: Position, pos2: Position): boolean {
 
 /**
  * Lấy vị trí mới sau khi di chuyển theo hướng
+ * Default step size is one cell (40px) for pathfinding
  */
 export function getPositionInDirection(
   position: Position,
   direction: Direction,
-  steps: number = 40 // Each cell is 40x40 pixels
+  steps: number = CELL_SIZE // Default to one cell for pathfinding
 ): Position {
   const newPos = { ...position };
 
@@ -55,22 +57,22 @@ export function getPositionInDirection(
 
 /**
  * Lấy vị trí mới sau khi di chuyển theo hướng với bước nhỏ (3px)
- * Dùng cho prediction
+ * Dùng cho prediction và movement
  */
 export function getPositionInDirectionSmallStep(
   position: Position,
   direction: Direction,
-  steps: number = 3 // Server moves 3px per step
+  steps: number = MOVE_STEP_SIZE // Server moves 3px per step
 ): Position {
   return getPositionInDirection(position, direction, steps);
 }
 
 /**
- * Lấy tất cả các vị trí xung quanh (4 hướng)
+ * Lấy tất cả các vị trí xung quanh (4 hướng) - returns cell-centered positions
  */
 export function getAdjacentPositions(position: Position): Position[] {
   return [Direction.UP, Direction.DOWN, Direction.LEFT, Direction.RIGHT].map(
-    (dir) => getPositionInDirection(position, dir)
+    (dir) => getPositionInDirection(position, dir, CELL_SIZE)
   );
 }
 
