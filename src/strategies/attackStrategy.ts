@@ -6,12 +6,14 @@ import {
   Direction,
   Position,
 } from "../types";
+import { isPositionSafe, calculateBombScore } from "../utils/gameLogic";
 import {
+  getPositionInDirection,
+  // Use unified collision system
   canMoveTo,
-  isPositionSafe,
-  calculateBombScore,
-} from "../utils/gameLogic";
-import { getPositionInDirection } from "../utils";
+  isBlocked,
+  PLAYER_SIZE,
+} from "../utils";
 
 /**
  * Attack strategy - places bombs to eliminate enemies.

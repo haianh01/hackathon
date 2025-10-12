@@ -10,18 +10,21 @@ import {
   calculateBombScore,
   isPositionSafe,
   getSafeAdjacentPositions,
+  // Use unified collision system
   canMoveTo,
+  isBlocked,
+  PLAYER_SIZE,
+  CELL_SIZE,
+  cellToPixel,
+  pixelToCell,
 } from "../utils";
 import { Pathfinding, canEscapeFromBomb } from "../utils/pathfinding";
 import { manhattanDistance, getPositionInDirection } from "../utils/position";
 
-// Helper function để snap position về grid
-const CELL_SIZE = 40;
+// Helper function để snap position về grid - now using unified system
 function snapToGrid(pos: Position): Position {
-  return {
-    x: Math.round(pos.x / CELL_SIZE) * CELL_SIZE,
-    y: Math.round(pos.y / CELL_SIZE) * CELL_SIZE,
-  };
+  const cellIndex = pixelToCell(pos);
+  return cellToPixel(cellIndex);
 }
 
 /**
@@ -47,6 +50,11 @@ export class WallBreakerStrategy extends BaseStrategy {
   > = new Map();
 
   private destroyedChests: Set<string> = new Set(); // Track destroyed chests
+
+  // FIXED: Add progress tracking to prevent infinite loops
+  private lastTargetPosition: Position | null = null;
+  private noProgressCount = 0;
+  private readonly MAX_NO_PROGRESS = 5; // Max attempts without progress
 
   evaluate(gameState: GameState): BotDecision | null {
     console.log(`\n🧱 === WallBreakerStrategy EVALUATION START ===`);
@@ -287,6 +295,34 @@ export class WallBreakerStrategy extends BaseStrategy {
       );
     }
 
+    // FIXED: Check for progress toward target to prevent infinite loops
+    const targetPosition = bestPosition.position;
+    const targetKey = `${targetPosition.x},${targetPosition.y}`;
+    const lastTargetKey = this.lastTargetPosition
+      ? `${this.lastTargetPosition.x},${this.lastTargetPosition.y}`
+      : null;
+
+    if (lastTargetKey === targetKey) {
+      this.noProgressCount++;
+      console.log(`⚠️ Same target for ${this.noProgressCount} attempts`);
+
+      if (this.noProgressCount >= this.MAX_NO_PROGRESS) {
+        console.log(
+          `🛑 Infinite loop detected! Abandoning target after ${this.MAX_NO_PROGRESS} attempts`
+        );
+        console.log(
+          `🧱 === WallBreakerStrategy EVALUATION END (LOOP PREVENTION) ===\n`
+        );
+        this.lastTargetPosition = null;
+        this.noProgressCount = 0;
+        return null;
+      }
+    } else {
+      // New target or progress made, reset counter
+      this.lastTargetPosition = targetPosition;
+      this.noProgressCount = 0;
+    }
+
     // Nếu chưa ở vị trí tối ưu, di chuyển đến đó bằng pathfinding
     console.log(`🚶 WallBreakerStrategy: Cần di chuyển đến vị trí tối ưu...`);
 
@@ -319,13 +355,29 @@ export class WallBreakerStrategy extends BaseStrategy {
       const nextStep = path[1];
 
       if (nextStep) {
-        const direction = this.getDirectionToPosition(currentPos, nextStep);
+        // FIXED: Ensure Y-coordinate alignment to prevent position mismatch
+        const alignedNextStep = {
+          x: nextStep.x,
+          y: currentPos.y, // Keep same Y to avoid coordinate mismatch
+        };
+
+        console.log(`🔧 Original next step: (${nextStep.x}, ${nextStep.y})`);
+        console.log(
+          `🔧 Aligned next step: (${alignedNextStep.x}, ${alignedNextStep.y})`
+        );
+
+        const direction = this.getDirectionToPosition(
+          currentPos,
+          alignedNextStep
+        );
 
         if (direction) {
           const movePriority = this.priority - 5;
           console.log(`🗺️ Using pathfinding to reach optimal position`);
           console.log(`📍 Current: (${currentPos.x}, ${currentPos.y})`);
-          console.log(`🎯 Next step: (${nextStep.x}, ${nextStep.y})`);
+          console.log(
+            `🎯 Next step: (${alignedNextStep.x}, ${alignedNextStep.y})`
+          );
           console.log(
             `🏁 Final target: (${bestPosition.position.x}, ${bestPosition.position.y})`
           );

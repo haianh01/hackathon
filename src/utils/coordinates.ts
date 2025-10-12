@@ -1,29 +1,43 @@
 import { Position } from "../types";
+import {
+  CELL_SIZE,
+  MOVE_STEP_SIZE,
+  MOVE_INTERVAL_MS,
+  pixelToCell as pixelToCellFromConstants,
+  cellToPixel,
+  cellToPixelCorner,
+  pixelToCellCenter,
+  isWithinBounds,
+  isWithinCellBounds as isWithinCellBoundsFromConstants,
+  createPositionKey as createPositionKeyFromConstants,
+  createCellKey,
+} from "./constants";
 
 /**
+ * @deprecated Use constants.ts instead
  * Standard cell size in pixels
  */
-export const CELL_SIZE = 40;
+export { CELL_SIZE };
 
 /**
+ * @deprecated Use constants.ts instead
  * Movement step size in pixels (server moves 3px per step)
  */
-export const MOVE_STEP_SIZE = 3;
+export { MOVE_STEP_SIZE };
 
 /**
+ * @deprecated Use constants.ts instead
  * Default movement interval in milliseconds
  */
-export const MOVE_INTERVAL_MS = 200;
+export { MOVE_INTERVAL_MS };
 
 /**
  * Convert pixel coordinates to cell coordinates (for pathfinding)
  * Returns the center of the cell that contains the pixel position
+ * @deprecated Use constants.pixelToCellCenter instead
  */
 export function pixelToCell(pixelPos: Position): Position {
-  return {
-    x: Math.round(pixelPos.x / CELL_SIZE) * CELL_SIZE,
-    y: Math.round(pixelPos.y / CELL_SIZE) * CELL_SIZE,
-  };
+  return pixelToCellCenter(pixelPos);
 }
 
 /**
@@ -31,20 +45,14 @@ export function pixelToCell(pixelPos: Position): Position {
  * Returns integer indices for accessing grid arrays
  */
 export function pixelToCellIndex(pixelPos: Position): Position {
-  return {
-    x: Math.round(pixelPos.x / CELL_SIZE),
-    y: Math.round(pixelPos.y / CELL_SIZE),
-  };
+  return pixelToCellFromConstants(pixelPos);
 }
 
 /**
  * Convert cell indices to pixel coordinates (center of cell)
  */
 export function cellIndexToPixel(cellIndex: Position): Position {
-  return {
-    x: cellIndex.x * CELL_SIZE,
-    y: cellIndex.y * CELL_SIZE,
-  };
+  return cellToPixelCorner(cellIndex);
 }
 
 /**
@@ -59,37 +67,26 @@ export function cellToCellIndex(cellPos: Position): Position {
 
 /**
  * Check if position is within pixel bounds
+ * @deprecated Use constants.isWithinBounds instead
  */
 export function isWithinPixelBounds(
   position: Position,
   mapWidthPx: number,
   mapHeightPx: number
 ): boolean {
-  return (
-    position.x >= 0 &&
-    position.x < mapWidthPx &&
-    position.y >= 0 &&
-    position.y < mapHeightPx
-  );
+  return isWithinBounds(position, mapWidthPx, mapHeightPx);
 }
 
 /**
  * Check if cell index is within cell bounds
+ * @deprecated Use constants.isWithinCellBounds instead
  */
 export function isWithinCellBounds(
   cellIndex: Position,
   mapWidthPx: number,
   mapHeightPx: number
 ): boolean {
-  const maxCellX = Math.floor(mapWidthPx / CELL_SIZE);
-  const maxCellY = Math.floor(mapHeightPx / CELL_SIZE);
-
-  return (
-    cellIndex.x >= 0 &&
-    cellIndex.x < maxCellX &&
-    cellIndex.y >= 0 &&
-    cellIndex.y < maxCellY
-  );
+  return isWithinCellBoundsFromConstants(cellIndex, mapWidthPx, mapHeightPx);
 }
 
 /**
@@ -110,17 +107,17 @@ export function getMapCellDimensions(
 
 /**
  * Create a position key for maps/sets (normalized to cell coordinates)
+ * @deprecated Use constants.createPositionKey instead
  */
 export function createPositionKey(position: Position): string {
-  const cellPos = pixelToCell(position);
-  return `${cellPos.x},${cellPos.y}`;
+  return createPositionKeyFromConstants(position);
 }
 
 /**
  * Create a cell index key for maps/sets
  */
 export function createCellIndexKey(cellIndex: Position): string {
-  return `${cellIndex.x},${cellIndex.y}`;
+  return createCellKey(cellIndex);
 }
 
 /**

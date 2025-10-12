@@ -3,8 +3,11 @@ import { GameState, BotDecision, BotAction, Direction } from "../types";
 import {
   manhattanDistance,
   isPositionSafe,
-  canMoveTo,
   getPositionInDirection,
+  // Use unified collision system
+  canMoveTo,
+  isBlocked,
+  PLAYER_SIZE,
 } from "../utils";
 
 /**

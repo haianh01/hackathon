@@ -12,6 +12,10 @@ import {
   isPositionSafe,
   getDirectionToTarget,
   isPositionInDangerZone,
+  // Use unified collision system
+  canMoveTo,
+  isBlocked,
+  PLAYER_SIZE,
 } from "../utils";
 
 /**

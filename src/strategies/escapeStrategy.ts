@@ -13,8 +13,12 @@ import {
 import { Pathfinding } from "../utils/pathfinding";
 import {
   getPositionInDirection,
-  canMoveTo,
   getDirectionToTarget,
+  // Use unified collision system
+  canMoveTo,
+  isBlocked,
+  PLAYER_SIZE,
+  EDGE_SAFETY_MARGIN,
 } from "../utils";
 /**
  * Escape strategy for when the bot is in a danger zone.
@@ -311,13 +315,12 @@ export class EscapeStrategy extends BaseStrategy {
         `🔍 Testing direction ${direction}: (${currentPos.x}, ${currentPos.y}) -> (${newPos.x}, ${newPos.y})`
       );
 
-      // ENHANCED bounds check with safety margin
-      const SAFETY_MARGIN = 20; // Keep bot at least 20px from edges
+      // ENHANCED bounds check with unified safety margin
       if (
-        newPos.x < SAFETY_MARGIN ||
-        newPos.x >= gameState.map.width - SAFETY_MARGIN ||
-        newPos.y < SAFETY_MARGIN ||
-        newPos.y >= gameState.map.height - SAFETY_MARGIN
+        newPos.x < EDGE_SAFETY_MARGIN ||
+        newPos.x >= gameState.map.width - EDGE_SAFETY_MARGIN ||
+        newPos.y < EDGE_SAFETY_MARGIN ||
+        newPos.y >= gameState.map.height - EDGE_SAFETY_MARGIN
       ) {
         console.log(
           `❌ Direction ${direction}: Too close to bounds (safety margin)!`
@@ -342,13 +345,12 @@ export class EscapeStrategy extends BaseStrategy {
             EMERGENCY_STEP * step
           );
 
-          // ENHANCED bounds check with safety margin
-          const SAFETY_MARGIN = 20;
+          // ENHANCED bounds check with unified safety margin
           if (
-            futurePos.x < SAFETY_MARGIN ||
-            futurePos.x >= gameState.map.width - SAFETY_MARGIN ||
-            futurePos.y < SAFETY_MARGIN ||
-            futurePos.y >= gameState.map.height - SAFETY_MARGIN
+            futurePos.x < EDGE_SAFETY_MARGIN ||
+            futurePos.x >= gameState.map.width - EDGE_SAFETY_MARGIN ||
+            futurePos.y < EDGE_SAFETY_MARGIN ||
+            futurePos.y >= gameState.map.height - EDGE_SAFETY_MARGIN
           ) {
             console.log(
               `⚠️ Direction ${direction}: Too close to bounds at step ${step} (${futurePos.x}, ${futurePos.y})`
@@ -531,13 +533,12 @@ export class EscapeStrategy extends BaseStrategy {
         EMERGENCY_STEP
       );
 
-      // Enhanced bounds check with safety margin
-      const SAFETY_MARGIN = 20;
+      // Enhanced bounds check with unified safety margin
       if (
-        newPos.x < SAFETY_MARGIN ||
-        newPos.x >= gameState.map.width - SAFETY_MARGIN ||
-        newPos.y < SAFETY_MARGIN ||
-        newPos.y >= gameState.map.height - SAFETY_MARGIN
+        newPos.x < EDGE_SAFETY_MARGIN ||
+        newPos.x >= gameState.map.width - EDGE_SAFETY_MARGIN ||
+        newPos.y < EDGE_SAFETY_MARGIN ||
+        newPos.y >= gameState.map.height - EDGE_SAFETY_MARGIN
       ) {
         continue; // Too close to bounds, not blocked by player
       }

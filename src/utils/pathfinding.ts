@@ -11,6 +11,12 @@ import {
   getMapCellDimensions,
   createCellIndexKey,
 } from "./coordinates";
+import {
+  // Import unified collision system from constants
+  isBlocked,
+  cellToPixelCorner,
+  WALL_SIZE,
+} from "./constants";
 
 /**
  * Pathfinding sử dụng thuật toán A* với MinHeap optimization
@@ -158,26 +164,11 @@ export class Pathfinding {
       return false;
     }
 
-    // Convert to pixel position for obstacle checking
-    const pixelPos: Position = {
-      x: cellIndex.x * CELL_SIZE,
-      y: cellIndex.y * CELL_SIZE,
-    };
+    // Convert to pixel position for unified collision checking
+    const pixelPos = cellToPixelCorner(cellIndex);
 
-    // Check for solid walls or chests at this position
-    const hasSolidWall = gameState.map.walls.some(
-      (wall) =>
-        wall.position.x === pixelPos.x &&
-        wall.position.y === pixelPos.y &&
-        !wall.isDestructible
-    );
-
-    const hasChest = gameState.map.chests.some(
-      (chest) =>
-        chest.position.x === pixelPos.x && chest.position.y === pixelPos.y
-    );
-
-    return !(hasSolidWall || hasChest);
+    // Use unified collision system with WALL_SIZE for accurate detection
+    return !isBlocked(pixelPos, gameState, WALL_SIZE);
   }
 
   /**

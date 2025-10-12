@@ -4,53 +4,25 @@ import {
   positionsEqual,
   getPositionsInLine,
 } from "./position";
-import { isWithinPixelBounds } from "./coordinates";
+import {
+  isWithinBounds,
+  isBlocked,
+  canMoveTo as canMoveToUnified,
+  PLAYER_SIZE,
+} from "./constants";
 
 /**
+ * @deprecated Use constants.isBlocked instead
  * Kiểm tra xem vị trí có bị tường chặn không
  */
 export function isPositionBlocked(
   position: Position,
   gameState: GameState
 ): boolean {
-  const OBJECT_SIZE = 40; // Standard object size in pixels
-  const TOLERANCE = 20; // Half object size for overlap detection
-
-  // Check solid walls with overlap detection
-  const solidWall = gameState.map.walls.some(
-    (wall) =>
-      Math.abs(wall.position.x - position.x) < TOLERANCE &&
-      Math.abs(wall.position.y - position.y) < TOLERANCE
+  console.log(
+    `⚠️ Using deprecated isPositionBlocked, switch to constants.isBlocked`
   );
-
-  // Check chests with overlap detection
-  const chest = (gameState.map.chests || []).some(
-    (c) =>
-      Math.abs(c.position.x - position.x) < TOLERANCE &&
-      Math.abs(c.position.y - position.y) < TOLERANCE
-  );
-
-  if (solidWall || chest) {
-    console.log(
-      `🚧 Position (${position.x}, ${position.y}) is BLOCKED by ${
-        solidWall ? "wall" : "chest"
-      }`
-    );
-    if (chest) {
-      const blockingChest = (gameState.map.chests || []).find(
-        (c) =>
-          Math.abs(c.position.x - position.x) < TOLERANCE &&
-          Math.abs(c.position.y - position.y) < TOLERANCE
-      );
-      if (blockingChest) {
-        console.log(
-          `  Blocking chest at: (${blockingChest.position.x}, ${blockingChest.position.y})`
-        );
-      }
-    }
-  }
-
-  return solidWall || chest;
+  return isBlocked(position, gameState, PLAYER_SIZE);
 }
 
 /**
@@ -161,38 +133,13 @@ export function getSafeAdjacentPositions(
 }
 
 /**
+ * @deprecated Use constants.canMoveTo instead
  * Kiểm tra xem có thể di chuyển đến vị trí không
  * Uses pixel coordinates for precise bounds checking
  */
 export function canMoveTo(position: Position, gameState: GameState): boolean {
-  // Check if within map bounds (pixel-based)
-  if (
-    !isWithinPixelBounds(position, gameState.map.width, gameState.map.height)
-  ) {
-    return false;
-  }
-
-  // Check if blocked by walls or chests
-  if (isPositionBlocked(position, gameState)) {
-    return false;
-  }
-
-  // Check if another bot is at this position with overlap detection
-  const PLAYER_SIZE = 30; // Player collision size (smaller than objects)
-  if (
-    gameState.enemies.some(
-      (enemy) =>
-        Math.abs(enemy.position.x - position.x) < PLAYER_SIZE &&
-        Math.abs(enemy.position.y - position.y) < PLAYER_SIZE
-    )
-  ) {
-    console.log(
-      `🤖 Position (${position.x}, ${position.y}) is BLOCKED by enemy player`
-    );
-    return false;
-  }
-
-  return true;
+  console.log(`⚠️ Using deprecated canMoveTo, switch to constants.canMoveTo`);
+  return canMoveToUnified(position, gameState, PLAYER_SIZE);
 }
 
 /**
@@ -302,14 +249,12 @@ export function canMoveToPositionPrecise(
   gameState: GameState
 ): boolean {
   // Check if within map bounds (pixel-based)
-  if (
-    !isWithinPixelBounds(position, gameState.map.width, gameState.map.height)
-  ) {
+  if (!isWithinBounds(position, gameState.map.width, gameState.map.height)) {
     return false;
   }
 
-  // Check for wall collision
-  if (isPositionCollidingWithWalls(position, gameState)) {
+  // Check for wall collision using unified system
+  if (isBlocked(position, gameState)) {
     return false;
   }
 
