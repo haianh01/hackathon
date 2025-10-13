@@ -50,10 +50,13 @@ export class BombermanAI {
       return false;
     }
 
-    // Clear the flag after 1 second (bomb should be reflected in gameState by then)
-    if (Date.now() - this.bombPlacementTime > 1000) {
+    // Keep immediate escape active for longer to ensure bot gets to safety
+    // Bomb explodes after ~5 seconds, so keep emergency mode for 3 seconds minimum
+    const elapsedTime = Date.now() - this.bombPlacementTime;
+    if (elapsedTime > 3000) {
       this.justPlacedBomb = false;
       this.bombPlacementPosition = null;
+      console.log(`✅ Emergency escape period ended (${elapsedTime}ms elapsed)`);
       return false;
     }
 

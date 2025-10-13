@@ -64,7 +64,8 @@ export class BomberManBot {
       }
     });
     this.socketConnection.onPositionUpdate((x: number, y: number) => {
-      // console.log(`📍 Position updated: (${x}, ${y})`);
+      console.log(`📍 Position updated from server: (${x}, ${y})`);
+      this.gameEngine.updateBotPosition(x, y);
     });
 
     // Set up real-time event callbacks
@@ -139,6 +140,11 @@ export class BomberManBot {
 
     try {
       const gameState = this.gameEngine.getGameState();
+      console.log(
+        "%c🤪 ~ file: bombermanBot.ts:141 [] -> gameState : ",
+        "color: #b7d8be",
+        gameState.currentBot
+      );
 
       const decision = this.ai.makeDecision(gameState);
       console.log(

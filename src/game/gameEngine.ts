@@ -33,10 +33,32 @@ export class GameEngine {
 
   /**
    * Gets the current game state.
-   * @returns A copy of the current game state.
+   * @returns The current game state (direct reference for real-time updates).
+   * NOTE: Previously returned a shallow copy, but this caused position updates
+   * to not be reflected in AI logic. Now returns direct reference for real-time sync.
    */
   public getGameState(): GameState {
-    return { ...this.gameState };
+    return this.gameState; // Direct reference for real-time position updates
+  }
+
+  /**
+   * Updates the current bot's position immediately (real-time update).
+   * This is called when receiving position updates from the server.
+   * @param x The new X coordinate.
+   * @param y The new Y coordinate.
+   */
+  public updateBotPosition(x: number, y: number): void {
+    this.gameState.currentBot.position.x = x;
+    this.gameState.currentBot.position.y = y;
+
+    // Also update in bots array if present
+    const botInArray = this.gameState.map.bots.find(
+      (b) => b.id === this.gameState.currentBot.id
+    );
+    if (botInArray) {
+      botInArray.position.x = x;
+      botInArray.position.y = y;
+    }
   }
 
   /**
