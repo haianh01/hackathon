@@ -18,15 +18,15 @@ export interface MovementState {
 }
 
 export class PositionPredictor {
-  private static readonly GRID_SIZE = 1; // 1 ô
-  private static readonly MS_PER_MOVE = 200; // Thời gian di chuyển 1 ô (ms)
+  private static readonly MOVE_STEP_SIZE = 3; // Server moves 3px per tick
+  private static readonly MS_PER_MOVE = 17; // Server tickrate: 17ms (~59 ticks/sec)
 
   /**
    * Dự đoán vị trí hiện tại dựa trên vị trí confirm cuối cùng và thời gian trôi qua
-   * @param lastConfirmed Vị trí được server confirm cuối cùng
+   * @param lastConfirmed Vị trí được server confirm cuối cùng (pixel coordinates)
    * @param currentDirection Hướng đang di chuyển
-   * @param speed Tốc độ di chuyển (mặc định 1 ô/200ms)
-   * @returns Vị trí dự đoán hiện tại
+   * @param speed Tốc độ di chuyển (mặc định 1 = 3px/17ms)
+   * @returns Vị trí dự đoán hiện tại (pixel coordinates)
    */
   public static predictCurrentPosition(
     lastConfirmed: PositionWithTimestamp,
@@ -44,15 +44,15 @@ export class PositionPredictor {
     const now = Date.now();
     const timePassed = now - lastConfirmed.timestamp;
 
-    // Tính số ô đã di chuyển dựa trên thời gian và tốc độ
-    const moveTimePerCell = this.MS_PER_MOVE / speed;
-    const cellsMoved = Math.floor(timePassed / moveTimePerCell);
+    // Tính số ticks đã di chuyển dựa trên thời gian (17ms per tick)
+    const ticksPassed = Math.floor(timePassed / this.MS_PER_MOVE);
+    const pixelsMoved = ticksPassed * speed; // speed multiplier for MOVE_STEP_SIZE
 
     // Tính vị trí dự đoán
     const predicted = this.calculatePosition(
       lastConfirmed,
       currentDirection,
-      cellsMoved
+      pixelsMoved
     );
 
     // Tính độ tin cậy (giảm dần theo thời gian)
@@ -67,10 +67,10 @@ export class PositionPredictor {
 
   /**
    * Dự đoán vị trí sau N bước di chuyển
-   * @param current Vị trí hiện tại
+   * @param current Vị trí hiện tại (pixel coordinates)
    * @param direction Hướng di chuyển
-   * @param steps Số bước di chuyển
-   * @returns Vị trí sau khi di chuyển
+   * @param steps Số bước di chuyển (mỗi bước = 3px)
+   * @returns Vị trí sau khi di chuyển (pixel coordinates)
    */
   public static predictNextPosition(
     current: { x: number; y: number },
@@ -102,7 +102,8 @@ export class PositionPredictor {
   }
 
   /**
-   * Lấy delta x, y cho mỗi hướng
+   * Lấy delta x, y cho mỗi hướng (in pixels, not cells)
+   * Server moves 3 pixels per tick at 17ms tickrate
    */
   private static getDirectionDelta(direction: Direction): {
     x: number;
@@ -110,13 +111,13 @@ export class PositionPredictor {
   } {
     switch (direction) {
       case Direction.UP:
-        return { x: 0, y: -1 };
+        return { x: 0, y: -this.MOVE_STEP_SIZE }; // -3 pixels
       case Direction.DOWN:
-        return { x: 0, y: 1 };
+        return { x: 0, y: this.MOVE_STEP_SIZE }; // +3 pixels
       case Direction.LEFT:
-        return { x: -1, y: 0 };
+        return { x: -this.MOVE_STEP_SIZE, y: 0 }; // -3 pixels
       case Direction.RIGHT:
-        return { x: 1, y: 0 };
+        return { x: this.MOVE_STEP_SIZE, y: 0 }; // +3 pixels
       default:
         return { x: 0, y: 0 };
     }

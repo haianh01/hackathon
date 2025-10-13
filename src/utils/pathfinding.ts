@@ -1,5 +1,5 @@
-import { GameState, Position, Direction, Bomb } from "../types";
-import { manhattanDistance, getPositionInDirection } from "./position";
+import { GameState, Position, Bomb } from "../types";
+import { manhattanDistance } from "./position";
 import { MinHeap } from "./minHeap";
 import {
   CELL_SIZE,
@@ -505,21 +505,21 @@ export function canEscapeFromBomb(
         continue;
       }
 
-      // wall/chest blocker check
+      // wall/chest blocker check using unified collision system
       const pixelPos = {
         x: nextCellIndex.x * CELL_SIZE,
         y: nextCellIndex.y * CELL_SIZE,
       };
 
-      const isBlocked =
-        gameState.map.walls.some(
-          (w) => w.position.x === pixelPos.x && w.position.y === pixelPos.y
-        ) ||
-        gameState.map.chests.some(
-          (c) => c.position.x === pixelPos.x && c.position.y === pixelPos.y
-        );
+      // const isBlocked =
+      //   gameState.map.walls.some(
+      //     (w) => w.position.x === pixelPos.x && w.position.y === pixelPos.y
+      //   ) ||
+      //   gameState.map.chests.some(
+      //     (c) => c.position.x === pixelPos.x && c.position.y === pixelPos.y
+      //   );
 
-      if (isBlocked) {
+      if (isBlocked(pixelPos, gameState, WALL_SIZE)) {
         console.log(
           `      🚧 Blocked by wall/chest at (${pixelPos.x}, ${pixelPos.y})`
         );
@@ -537,10 +537,10 @@ export function canEscapeFromBomb(
 
       // If this cell is not in unsafe set, evaluate time to reach
       if (!unsafe.has(key)) {
-        // FIXED: Sử dụng tính toán thời gian thực tế
-        // Bot di chuyển với continuous movement ~17ms/command
-        // Với tốc độ 3px/command, trong 1 giây có thể di chuyển ~180px
-        const pixelsPerSecond = (1000 / 17) * pixelsPerMove; // ~176 px/s
+        // Bot di chuyển với continuous movement ~17ms/tick
+        // pixelsPerMove = botSpeed * MOVE_STEP_SIZE (default: 1 * 3 = 3px/tick)
+        // Tốc độ: (1000ms / 17ms) * 3px ≈ 176 px/s với speed=1
+        const pixelsPerSecond = (1000 / 17) * pixelsPerMove;
         const timeNeededMs = (distancePx / pixelsPerSecond) * 1000;
 
         console.log(

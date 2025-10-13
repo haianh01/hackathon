@@ -4,5 +4,6 @@
         "**/.cusor/**": true,
         "**/home/haianh/**": true,
         "**/node_modules/**": true
-    }
+    },
+    "claude-code.useTerminal": true
 }

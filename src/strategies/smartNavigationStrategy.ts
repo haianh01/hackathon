@@ -1,21 +1,13 @@
 import { BaseStrategy } from "./baseStrategy";
-import {
-  GameState,
-  BotDecision,
-  BotAction,
-  Direction,
-  Position,
-} from "../types";
+import { GameState, BotDecision, BotAction } from "../types";
 import {
   Pathfinding,
   manhattanDistance,
   isPositionSafe,
   getDirectionToTarget,
-  isPositionInDangerZone,
-  // Use unified collision system
+  getPositionInDirection,
   canMoveTo,
-  isBlocked,
-  PLAYER_SIZE,
+  CELL_SIZE,
 } from "../utils";
 
 /**
@@ -41,7 +33,11 @@ export class SmartNavigationStrategy extends BaseStrategy {
         // Nếu pathfinding thất bại, sử dụng direct movement
         if (path.length < 2) {
           const direction = getDirectionToTarget(currentPos, escapeTarget);
-          const nextPos = this.getNextPosition(currentPos, direction);
+          const nextPos = getPositionInDirection(
+            currentPos,
+            direction,
+            CELL_SIZE
+          );
 
           if (isPositionSafe(nextPos, gameState)) {
             return this.createDecision(
@@ -80,7 +76,7 @@ export class SmartNavigationStrategy extends BaseStrategy {
     // Nếu pathfinding thất bại, sử dụng direct movement
     if (path.length < 2) {
       const direction = getDirectionToTarget(currentPos, target);
-      const nextPos = this.getNextPosition(currentPos, direction);
+      const nextPos = getPositionInDirection(currentPos, direction, CELL_SIZE);
 
       if (isPositionSafe(nextPos, gameState)) {
         return this.createDecision(
@@ -120,7 +116,7 @@ export class SmartNavigationStrategy extends BaseStrategy {
    */
   private findBestTarget(gameState: GameState): any {
     const currentPos = gameState.currentBot.position;
-    const maxReasonableDistance = 20; // Giới hạn khoảng cách hợp lý
+    const maxReasonableDistance = 20 * CELL_SIZE; // 20 cells = 800 pixels
     let bestTarget = null;
     let bestScore = -1;
 
@@ -177,40 +173,41 @@ export class SmartNavigationStrategy extends BaseStrategy {
     }
 
     const currentPos = gameState.currentBot.position;
-    const maxSearchRadius = 15; // Giới hạn phạm vi tìm kiếm
+    const maxSearchRadius = 5; // 5 cells radius
 
     // Tìm vị trí có thể phá nhiều tường nhất trong phạm vi hợp lý
     let bestPosition = null;
     let maxWallCount = 0;
 
-    for (
-      let x = Math.max(0, currentPos.x - maxSearchRadius);
-      x <= Math.min(gameState.map.width - 1, currentPos.x + maxSearchRadius);
-      x++
-    ) {
-      for (
-        let y = Math.max(0, currentPos.y - maxSearchRadius);
-        y <= Math.min(gameState.map.height - 1, currentPos.y + maxSearchRadius);
-        y++
-      ) {
-        const position = { x, y };
+    // Loop by cells, not pixels
+    for (let dx = -maxSearchRadius; dx <= maxSearchRadius; dx++) {
+      for (let dy = -maxSearchRadius; dy <= maxSearchRadius; dy++) {
+        const position = {
+          x: currentPos.x + dx * CELL_SIZE,
+          y: currentPos.y + dy * CELL_SIZE,
+        };
 
-        // Giới hạn khoảng cách Manhattan
-        const distance = manhattanDistance(currentPos, position);
-        if (distance > maxSearchRadius) {
+        // Check bounds
+        if (
+          position.x < 0 ||
+          position.x >= gameState.map.width ||
+          position.y < 0 ||
+          position.y >= gameState.map.height
+        ) {
           continue;
         }
 
-        // Kiểm tra có thể đứng ở đây không
-        const canStand =
-          !gameState.map.walls.some(
-            (wall) => wall.position.x === x && wall.position.y === y
-          ) &&
-          !(gameState.map.chests || []).some(
-            (c) => c.position.x === x && c.position.y === y
-          );
+        // Giới hạn khoảng cách Manhattan
+        const distance = manhattanDistance(currentPos, position);
+        if (distance > maxSearchRadius * CELL_SIZE) {
+          continue;
+        }
 
-        if (!canStand || !isPositionSafe(position, gameState)) {
+        // Use unified collision system
+        if (
+          !canMoveTo(position, gameState) ||
+          !isPositionSafe(position, gameState)
+        ) {
           continue;
         }
 
@@ -260,16 +257,27 @@ export class SmartNavigationStrategy extends BaseStrategy {
     for (const dir of directions) {
       for (let i = 1; i <= flameRange; i++) {
         const checkPos = {
-          x: position.x + dir.dx * i,
-          y: position.y + dir.dy * i,
+          x: position.x + dir.dx * i * CELL_SIZE,
+          y: position.y + dir.dy * i * CELL_SIZE,
         };
 
+        // Check for walls
         const wall = gameState.map.walls.find(
-          (w) => w.position.x === checkPos.x && w.position.y === checkPos.y
+          (w) =>
+            Math.abs(w.position.x - checkPos.x) < CELL_SIZE / 2 &&
+            Math.abs(w.position.y - checkPos.y) < CELL_SIZE / 2
         );
-        const chestAtPos = (gameState.map.chests || []).find(
-          (c) => c.position.x === checkPos.x && c.position.y === checkPos.y
+
+        // Check for chests (destructible)
+        const chest = (gameState.map.chests || []).find(
+          (c) =>
+            Math.abs(c.position.x - checkPos.x) < CELL_SIZE / 2 &&
+            Math.abs(c.position.y - checkPos.y) < CELL_SIZE / 2
         );
+
+        if (chest) {
+          count++;
+        }
 
         if (wall) {
           if (wall.isDestructible) {
@@ -303,24 +311,6 @@ export class SmartNavigationStrategy extends BaseStrategy {
   }
 
   /**
-   * Lấy vị trí tiếp theo theo hướng di chuyển
-   */
-  private getNextPosition(position: Position, direction: Direction): Position {
-    switch (direction) {
-      case Direction.UP:
-        return { x: position.x, y: position.y - 1 };
-      case Direction.DOWN:
-        return { x: position.x, y: position.y + 1 };
-      case Direction.LEFT:
-        return { x: position.x - 1, y: position.y };
-      case Direction.RIGHT:
-        return { x: position.x + 1, y: position.y };
-      default:
-        return position;
-    }
-  }
-
-  /**
    * Tìm vị trí an toàn gần nhất để thoát khỏi vùng nguy hiểm
    */
   private findEscapeTarget(gameState: GameState): any {
@@ -329,30 +319,31 @@ export class SmartNavigationStrategy extends BaseStrategy {
 
     // Tìm tất cả vị trí an toàn trong bán kính hợp lý
     const safePositions: any[] = [];
-    const searchRadius = 10; // Tăng bán kính tìm kiếm
+    const searchRadius = 5; // 5 cells radius
 
-    for (
-      let x = Math.max(0, currentPos.x - searchRadius);
-      x <= Math.min(map.width - 1, currentPos.x + searchRadius);
-      x++
-    ) {
-      for (
-        let y = Math.max(0, currentPos.y - searchRadius);
-        y <= Math.min(map.height - 1, currentPos.y + searchRadius);
-        y++
-      ) {
-        const position = { x, y };
+    // Loop by cells
+    for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+      for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+        const position = {
+          x: currentPos.x + dx * CELL_SIZE,
+          y: currentPos.y + dy * CELL_SIZE,
+        };
 
-        // Kiểm tra có thể đứng ở đây không
-        const canStand =
-          !map.walls.some(
-            (wall) => wall.position.x === x && wall.position.y === y
-          ) &&
-          !(map.chests || []).some(
-            (c) => c.position.x === x && c.position.y === y
-          );
+        // Check bounds
+        if (
+          position.x < 0 ||
+          position.x >= map.width ||
+          position.y < 0 ||
+          position.y >= map.height
+        ) {
+          continue;
+        }
 
-        if (canStand && isPositionSafe(position, gameState)) {
+        // Use unified collision system
+        if (
+          canMoveTo(position, gameState) &&
+          isPositionSafe(position, gameState)
+        ) {
           const distance = manhattanDistance(currentPos, position);
 
           // Ưu tiên vị trí xa bom nhất và có thể tiếp cận được
@@ -420,8 +411,8 @@ export class SmartNavigationStrategy extends BaseStrategy {
     for (const dir of directions) {
       for (let distance = 1; distance <= 3; distance++) {
         const position = {
-          x: currentPos.x + dir.dx * distance,
-          y: currentPos.y + dir.dy * distance,
+          x: currentPos.x + dir.dx * distance * CELL_SIZE,
+          y: currentPos.y + dir.dy * distance * CELL_SIZE,
         };
 
         // Kiểm tra trong bounds
@@ -434,17 +425,8 @@ export class SmartNavigationStrategy extends BaseStrategy {
           continue;
         }
 
-        // Kiểm tra có thể đứng ở đây không
-        const canStand =
-          !map.walls.some(
-            (wall) =>
-              wall.position.x === position.x && wall.position.y === position.y
-          ) &&
-          !(map.chests || []).some(
-            (c) => c.position.x === position.x && c.position.y === position.y
-          );
-
-        if (canStand) {
+        // Use unified collision system
+        if (canMoveTo(position, gameState)) {
           const dangerScore = this.calculateDangerScore(position, gameState);
           if (dangerScore < lowestDanger) {
             lowestDanger = dangerScore;

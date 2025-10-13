@@ -78,10 +78,10 @@ describe("PositionPredictor", () => {
 
   describe("predictNextPosition", () => {
     const testCases = [
-      { direction: Direction.UP, expected: { x: 5, y: 4 } },
-      { direction: Direction.DOWN, expected: { x: 5, y: 6 } },
-      { direction: Direction.LEFT, expected: { x: 4, y: 5 } },
-      { direction: Direction.RIGHT, expected: { x: 6, y: 5 } },
+      { direction: Direction.UP, expected: { x: 5, y: 2 } },    // -3 pixels
+      { direction: Direction.DOWN, expected: { x: 5, y: 8 } },  // +3 pixels
+      { direction: Direction.LEFT, expected: { x: 2, y: 5 } },  // -3 pixels
+      { direction: Direction.RIGHT, expected: { x: 8, y: 5 } }, // +3 pixels
     ];
 
     testCases.forEach(({ direction, expected }) => {

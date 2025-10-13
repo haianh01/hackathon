@@ -120,7 +120,7 @@ export class BomberManBot {
    * Sets up the bot's logic loop to run at a fixed interval.
    */
   private setupBotLogic(): void {
-    this.botLogicInterval = setInterval(() => this.executeBotLogic(), 500);
+    this.botLogicInterval = setInterval(() => this.executeBotLogic(), 200);
   }
 
   /**

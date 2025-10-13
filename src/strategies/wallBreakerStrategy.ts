@@ -6,20 +6,9 @@ import {
   Position,
   Direction,
 } from "../types";
-import {
-  calculateBombScore,
-  isPositionSafe,
-  getSafeAdjacentPositions,
-  // Use unified collision system
-  canMoveTo,
-  isBlocked,
-  PLAYER_SIZE,
-  CELL_SIZE,
-  cellToPixel,
-  pixelToCell,
-} from "../utils";
+import { canMoveTo, cellToPixel, pixelToCell } from "../utils";
 import { Pathfinding, canEscapeFromBomb } from "../utils/pathfinding";
-import { manhattanDistance, getPositionInDirection } from "../utils/position";
+import { manhattanDistance } from "../utils/position";
 
 // Helper function để snap position về grid - now using unified system
 function snapToGrid(pos: Position): Position {
@@ -355,29 +344,13 @@ export class WallBreakerStrategy extends BaseStrategy {
       const nextStep = path[1];
 
       if (nextStep) {
-        // FIXED: Ensure Y-coordinate alignment to prevent position mismatch
-        const alignedNextStep = {
-          x: nextStep.x,
-          y: currentPos.y, // Keep same Y to avoid coordinate mismatch
-        };
-
-        console.log(`🔧 Original next step: (${nextStep.x}, ${nextStep.y})`);
-        console.log(
-          `🔧 Aligned next step: (${alignedNextStep.x}, ${alignedNextStep.y})`
-        );
-
-        const direction = this.getDirectionToPosition(
-          currentPos,
-          alignedNextStep
-        );
+        const direction = this.getDirectionToPosition(currentPos, nextStep);
 
         if (direction) {
           const movePriority = this.priority - 5;
           console.log(`🗺️ Using pathfinding to reach optimal position`);
           console.log(`📍 Current: (${currentPos.x}, ${currentPos.y})`);
-          console.log(
-            `🎯 Next step: (${alignedNextStep.x}, ${alignedNextStep.y})`
-          );
+
           console.log(
             `🏁 Final target: (${bestPosition.position.x}, ${bestPosition.position.y})`
           );

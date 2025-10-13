@@ -1,6 +1,11 @@
 import { BaseStrategy } from "./baseStrategy";
 import { GameState, BotDecision, BotAction, Direction } from "../types";
-import { isPositionSafe, canMoveTo, getPositionInDirection } from "../utils";
+import {
+  isPositionSafe,
+  canMoveTo,
+  getPositionInDirection,
+  CELL_SIZE,
+} from "../utils";
 
 /**
  * Chiến thuật khám phá - di chuyển đến vùng chưa khám phá
@@ -21,7 +26,6 @@ export class ExploreStrategy extends BaseStrategy {
     ];
     let bestDirection = null;
     let bestScore = -1;
-
     for (const direction of directions) {
       const nextPos = getPositionInDirection(currentPos, direction);
 
@@ -64,7 +68,8 @@ export class ExploreStrategy extends BaseStrategy {
     const centerY = gameState.map.height / 2;
     const distanceFromCenter =
       Math.abs(position.x - centerX) + Math.abs(position.y - centerY);
-    score += Math.max(0, 50 - distanceFromCenter);
+    const maxDistance = gameState.map.width + gameState.map.height; // Max possible distance
+    score += Math.floor((1 - distanceFromCenter / maxDistance) * 50); // 0-50 points
 
     // Ưu tiên vùng có ít tường
     const nearbyWalls = this.countNearbyWalls(position, gameState, 2);
@@ -75,8 +80,9 @@ export class ExploreStrategy extends BaseStrategy {
       position,
       gameState
     );
-    if (nearestEnemyDistance < 3) {
-      score -= (3 - nearestEnemyDistance) * 10;
+    const DANGER_RADIUS = 3 * CELL_SIZE;
+    if (nearestEnemyDistance < DANGER_RADIUS) {
+      score -= ((DANGER_RADIUS - nearestEnemyDistance) / CELL_SIZE) * 10;
     }
 
     // Ưu tiên vùng có vật phẩm gần đó
@@ -95,8 +101,10 @@ export class ExploreStrategy extends BaseStrategy {
 
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dy = -radius; dy <= radius; dy++) {
-        const checkPos = { x: position.x + dx, y: position.y + dy };
-
+        const checkPos = {
+          x: position.x + dx * CELL_SIZE,
+          y: position.y + dy * CELL_SIZE,
+        };
         if (
           gameState.map.walls.some(
             (wall) =>
@@ -141,7 +149,7 @@ export class ExploreStrategy extends BaseStrategy {
         Math.abs(position.x - item.position.x) +
         Math.abs(position.y - item.position.y);
 
-      if (distance <= radius) {
+      if (distance <= radius * CELL_SIZE) {
         count++;
       }
     }
