@@ -235,13 +235,6 @@ export class SocketConnection {
     const moveAction = () => {
       if (this.socket?.connected && this.isGameStarted) {
         this.socket.emit("move", { orient: direction });
-        // const currentPos = this.getCurrentPosition();
-        // if (currentPos) {
-        //   this.predictedPosition = this.predictNextPosition(
-        //     currentPos,
-        //     direction
-        //   );
-        // }
       } else {
         this.stopContinuousMove();
       }

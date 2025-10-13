@@ -82,7 +82,13 @@ export class BomberManBot {
     this.socketConnection.onNewBomb((data: any) => {
       console.log(`⚡ Realtime: New bomb at (${data.x}, ${data.y})`);
       // TODO: Immediately update game state to avoid bomb
-      // this.gameEngine.addBombRealtime(data);
+      // this.gameEngine.addBombRealtime({
+      //   id: data.id || `realtime-${Date.now()}`,
+      //   position: { x: data.x, y: data.y },
+      //   ownerId: data.playerId,
+      //   timeRemaining: 5000, // Default bomb timer
+      //   flameRange: data.range || 2,
+      // });
     });
 
     this.socketConnection.onBombExplode((data: any) => {
