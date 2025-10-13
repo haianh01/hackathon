@@ -261,18 +261,14 @@ export class SmartNavigationStrategy extends BaseStrategy {
           y: position.y + dir.dy * i * CELL_SIZE,
         };
 
-        // Check for walls
+        // Check for walls using exact position match (both are cell-centered)
         const wall = gameState.map.walls.find(
-          (w) =>
-            Math.abs(w.position.x - checkPos.x) < CELL_SIZE / 2 &&
-            Math.abs(w.position.y - checkPos.y) < CELL_SIZE / 2
+          (w) => w.position.x === checkPos.x && w.position.y === checkPos.y
         );
 
-        // Check for chests (destructible)
+        // Check for chests (destructible) using exact position match
         const chest = (gameState.map.chests || []).find(
-          (c) =>
-            Math.abs(c.position.x - checkPos.x) < CELL_SIZE / 2 &&
-            Math.abs(c.position.y - checkPos.y) < CELL_SIZE / 2
+          (c) => c.position.x === checkPos.x && c.position.y === checkPos.y
         );
 
         if (chest) {

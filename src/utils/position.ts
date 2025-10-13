@@ -112,6 +112,7 @@ export function getDirectionToTarget(from: Position, to: Position): Direction {
 
 /**
  * Tạo mảng các vị trí từ vị trí bắt đầu đến vị trí kết thúc theo hướng
+ * Each step moves one full cell (CELL_SIZE = 40 pixels)
  */
 export function getPositionsInLine(
   start: Position,
@@ -122,7 +123,7 @@ export function getPositionsInLine(
   let current = { ...start };
 
   for (let i = 0; i < length; i++) {
-    current = getPositionInDirection(current, direction, 1);
+    current = getPositionInDirection(current, direction, CELL_SIZE);
     positions.push({ ...current });
   }
 

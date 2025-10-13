@@ -9,7 +9,6 @@ import {
   checkBoxCollision,
   CELL_SIZE,
   WALL_SIZE,
-  CHEST_SIZE,
   PLAYER_SIZE,
   EDGE_SAFETY_MARGIN,
   pixelToCell,

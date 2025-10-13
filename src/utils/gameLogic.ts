@@ -52,19 +52,18 @@ export function isPositionInDangerZone(
 
 /**
  * Kiểm tra xem vị trí có nằm trong phạm vi nổ của bom không
+ * Sử dụng AABB collision để check toàn bộ bot hitbox (30x30px)
  */
 export function isPositionInBombRange(
   position: Position,
   bomb: Bomb,
   gameState: GameState
 ): boolean {
-  const FLAME_TOLERANCE = 20; // Half cell size for flame overlap detection
+  const CELL_SIZE = 40; // Flame cell size
+  const PLAYER_SIZE = 30; // Bot hitbox size
 
-  // Kiểm tra cùng vị trí với bom (với tolerance)
-  if (
-    Math.abs(position.x - bomb.position.x) < FLAME_TOLERANCE &&
-    Math.abs(position.y - bomb.position.y) < FLAME_TOLERANCE
-  ) {
+  // Kiểm tra collision với bomb center (bomb occupies full cell)
+  if (checkBoxCollision(position, PLAYER_SIZE, bomb.position, CELL_SIZE)) {
     return true;
   }
 
@@ -84,11 +83,8 @@ export function isPositionInBombRange(
     );
 
     for (const flamePos of flamePositions) {
-      // Check if position overlaps with flame position
-      if (
-        Math.abs(position.x - flamePos.x) < FLAME_TOLERANCE &&
-        Math.abs(position.y - flamePos.y) < FLAME_TOLERANCE
-      ) {
+      // Check AABB collision: Bot (30x30px) vs Flame cell (40x40px)
+      if (checkBoxCollision(position, PLAYER_SIZE, flamePos, CELL_SIZE)) {
         return true;
       }
 
@@ -144,12 +140,15 @@ export function canMoveTo(position: Position, gameState: GameState): boolean {
 
 /**
  * Tính điểm số của việc đặt bom tại vị trí
+ * Sử dụng AABB collision để detect chính xác enemies/items trong flame
  */
 export function calculateBombScore(
   position: Position,
   gameState: GameState
 ): number {
   let score = 0;
+  const CELL_SIZE = 40;
+  const PLAYER_SIZE = 30;
   const directions = [
     Direction.UP,
     Direction.DOWN,
@@ -179,17 +178,17 @@ export function calculateBombScore(
         break; // Tường sẽ chặn flame tiếp tục
       }
 
-      // Điểm cho việc hạ gục enemy
+      // Điểm cho việc hạ gục enemy (dùng AABB collision)
       const enemy = gameState.enemies.find((e) =>
-        positionsEqual(e.position, flamePos)
+        checkBoxCollision(e.position, PLAYER_SIZE, flamePos, CELL_SIZE)
       );
       if (enemy) {
         score += 1000;
       }
 
-      // Điểm cho việc phá item
+      // Điểm cho việc phá item (dùng AABB collision với item size 20px)
       const item = gameState.map.items.find((i) =>
-        positionsEqual(i.position, flamePos)
+        checkBoxCollision(i.position, 20, flamePos, CELL_SIZE)
       );
       if (item) {
         score += 10;

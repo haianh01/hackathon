@@ -180,16 +180,16 @@ export function canMoveTo(
   }
 
   // 3. Check enemy players collision
-  for (const enemy of gameState.enemies || []) {
-    if (enemy.isAlive !== false) {
-      // Only check alive enemies
-      if (
-        checkBoxCollision(position, objectSize, enemy.position, PLAYER_SIZE)
-      ) {
-        return false;
-      }
-    }
-  }
+  // for (const enemy of gameState.enemies || []) {
+  //   if (enemy.isAlive !== false) {
+  //     // Only check alive enemies
+  //     if (
+  //       checkBoxCollision(position, objectSize, enemy.position, PLAYER_SIZE)
+  //     ) {
+  //       return false;
+  //     }
+  //   }
+  // }
 
   return true;
 }

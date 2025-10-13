@@ -16,8 +16,6 @@ import {
   getDirectionToTarget,
   // Use unified collision system
   canMoveTo,
-  isBlocked,
-  PLAYER_SIZE,
   EDGE_SAFETY_MARGIN,
 } from "../utils";
 /**
@@ -279,14 +277,14 @@ export class EscapeStrategy extends BaseStrategy {
     }
 
     // First, check if we're completely surrounded by enemy players
-    const allDirectionsBlockedByPlayers =
-      this.areAllDirectionsBlockedByPlayers(gameState);
-    if (allDirectionsBlockedByPlayers) {
-      console.log(
-        `⚠️ ALL DIRECTIONS BLOCKED BY PLAYERS - Trying alternative strategies...`
-      );
-      return this.handleCompletePlayerBlockage(gameState);
-    }
+    // const allDirectionsBlockedByPlayers =
+    //   this.areAllDirectionsBlockedByPlayers(gameState);
+    // if (allDirectionsBlockedByPlayers) {
+    //   console.log(
+    //     `⚠️ ALL DIRECTIONS BLOCKED BY PLAYERS - Trying alternative strategies...`
+    //   );
+    //   return this.handleCompletePlayerBlockage(gameState);
+    // }
 
     const directions = [
       Direction.UP,

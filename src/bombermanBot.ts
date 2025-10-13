@@ -134,13 +134,6 @@ export class BomberManBot {
     try {
       const gameState = this.gameEngine.getGameState();
 
-      // CRITICAL: Sync bot position from socket connection (realtime position from player_move event)
-      const socketPos = this.socketConnection.getCurrentPosition();
-      if (socketPos) {
-        gameState.currentBot.position = socketPos;
-        // console.log(`🔄 Synced position: (${socketPos.x}, ${socketPos.y})`);
-      }
-
       const decision = this.ai.makeDecision(gameState);
       console.log(
         `🤖 AI Decision: ${decision.action} -> ${

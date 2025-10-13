@@ -16,6 +16,7 @@ import {
   SmartNavigationStrategy,
   BombStrategy,
 } from "../strategies";
+import { CELL_SIZE } from "../utils";
 
 /**
  * The main AI engine for controlling the bot.
@@ -62,7 +63,9 @@ export class BombermanAI {
       Math.abs(currentPos.x - this.bombPlacementPosition.x) +
       Math.abs(currentPos.y - this.bombPlacementPosition.y);
 
-    return distance < 100; // Within danger range
+    const flameRange = gameState.currentBot.flameRange || 2;
+    const dangerRadius = (flameRange + 1) * CELL_SIZE; // Add 1 cell safety margin
+    return distance < dangerRadius;
   }
 
   /**
@@ -71,16 +74,13 @@ export class BombermanAI {
    * @returns The decision for the bot to execute.
    */
   public makeDecision(gameState: GameState): BotDecision {
-    // Check if we need immediate escape due to recent bomb placement
     if (this.needsImmediateEscape(gameState)) {
       console.log(`🚨 IMMEDIATE ESCAPE NEEDED after bomb placement!`);
 
-      // Force evaluate EscapeStrategy only
       const escapeStrategy = this.strategies.find(
         (s) => s.name === "Escape"
       ) as EscapeStrategy;
       if (escapeStrategy) {
-        // Temporarily override the danger detection for immediate escape
         const emergencyDecision = escapeStrategy.handleEmergency(gameState);
         if (emergencyDecision) {
           console.log(`🏃 EMERGENCY ESCAPE: ${emergencyDecision.reason}`);
