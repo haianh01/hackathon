@@ -19,6 +19,16 @@ import {
 } from "./constants";
 
 /**
+ * Options for pathfinding behavior
+ */
+export interface PathfindingOptions {
+  /** Ignore all bombs when pathfinding (e.g., for hypothetical paths) */
+  ignoreBombs?: boolean;
+  /** Allow passing through this specific bomb position once (e.g., own bomb after placing) */
+  allowOwnBomb?: Position;
+}
+
+/**
  * Pathfinding sử dụng thuật toán A* với MinHeap optimization
  * All pathfinding operates on CELL INDICES for performance and consistency
  *
@@ -40,20 +50,31 @@ export class Pathfinding {
   static findPath(
     start: Position,
     goal: Position,
-    gameState: GameState
+    gameState: GameState,
+    options?: PathfindingOptions
   ): Position[] {
     // Convert pixel positions to cell indices for pathfinding
     const startCell = pixelToCellIndex(start);
     const goalCell = pixelToCellIndex(goal);
+
+    // Early exit optimization: if already at goal
+    const startKey = createCellIndexKey(startCell);
+    const goalKey = createCellIndexKey(goalCell);
+    if (startKey === goalKey) {
+      // Return normalized cell center for consistency with path results
+      return [
+        {
+          x: startCell.x * CELL_SIZE + CELL_SIZE / 2,
+          y: startCell.y * CELL_SIZE + CELL_SIZE / 2,
+        },
+      ];
+    }
 
     const openSet = new MinHeap<Position>();
     const cameFrom = new Map<string, Position>();
     const gScore = new Map<string, number>();
     const fScore = new Map<string, number>();
     const closedSet = new Set<string>();
-
-    const startKey = createCellIndexKey(startCell);
-    const goalKey = createCellIndexKey(goalCell);
 
     gScore.set(startKey, 0);
     fScore.set(startKey, this.heuristic(startCell, goalCell));
@@ -77,8 +98,8 @@ export class Pathfinding {
 
       closedSet.add(currentKey);
 
-      // Check neighbors
-      const neighbors = this.getNeighbors(current, gameState);
+      // Check neighbors (pass options for bomb handling)
+      const neighbors = this.getNeighbors(current, gameState, options);
 
       for (const neighbor of neighbors) {
         const neighborKey = createCellIndexKey(neighbor);
@@ -128,7 +149,8 @@ export class Pathfinding {
 
   private static getNeighbors(
     cellIndex: Position,
-    gameState: GameState
+    gameState: GameState,
+    options?: PathfindingOptions
   ): Position[] {
     const neighbors: Position[] = [];
     const directions = [
@@ -144,8 +166,8 @@ export class Pathfinding {
         y: cellIndex.y + dir.y,
       };
 
-      // Check if neighbor is valid
-      if (this.isValidCellIndex(neighbor, gameState)) {
+      // Check if neighbor is valid (with bomb blocking logic)
+      if (this.isValidCellIndex(neighbor, gameState, options)) {
         neighbors.push(neighbor);
       }
     }
@@ -155,7 +177,8 @@ export class Pathfinding {
 
   private static isValidCellIndex(
     cellIndex: Position,
-    gameState: GameState
+    gameState: GameState,
+    options?: PathfindingOptions
   ): boolean {
     // Check if within map bounds (using cell dimensions)
     if (
@@ -168,7 +191,38 @@ export class Pathfinding {
     const pixelPos = cellToPixelCorner(cellIndex);
 
     // Use unified collision system with WALL_SIZE for accurate detection
-    return !isBlocked(pixelPos, gameState, WALL_SIZE);
+    if (isBlocked(pixelPos, gameState, WALL_SIZE)) {
+      return false;
+    }
+
+    // Check bombs blocking (unless explicitly ignored)
+    if (!options?.ignoreBombs && gameState.map.bombs.length > 0) {
+      const cellKey = createCellIndexKey(cellIndex);
+
+      for (const bomb of gameState.map.bombs) {
+        const bombCellIndex = pixelToCellIndex(bomb.position);
+        const bombKey = createCellIndexKey(bombCellIndex);
+
+        // If this cell contains a bomb
+        if (cellKey === bombKey) {
+          // Check if this is the "allowed own bomb" (can pass through once)
+          if (options?.allowOwnBomb) {
+            const ownBombCellIndex = pixelToCellIndex(options.allowOwnBomb);
+            const ownBombKey = createCellIndexKey(ownBombCellIndex);
+
+            // Allow passing through own bomb
+            if (bombKey === ownBombKey) {
+              continue; // This bomb is allowed, check next bomb
+            }
+          }
+
+          // Block this cell - contains enemy bomb or non-allowed bomb
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   /**
@@ -176,12 +230,14 @@ export class Pathfinding {
    * @param start The starting position (pixels).
    * @param goals An array of possible goal positions (pixels).
    * @param gameState The current game state.
+   * @param options Pathfinding options (bomb handling, etc.)
    * @returns The path as an array of positions in pixels, or null if no path is found.
    */
   static findShortestPath(
     start: Position,
     goals: Position[],
-    gameState: GameState
+    gameState: GameState,
+    options?: PathfindingOptions
   ): Position[] | null {
     if (goals.length === 0) {
       return null;
@@ -221,7 +277,7 @@ export class Pathfinding {
 
       closedSet.add(currentKey);
 
-      const neighbors = this.getNeighbors(current, gameState);
+      const neighbors = this.getNeighbors(current, gameState, options);
       for (const neighbor of neighbors) {
         const neighborKey = createCellIndexKey(neighbor);
 
@@ -338,12 +394,33 @@ export function computeExplosionCells(
   const bombCellIndex = pixelToCellIndex(bomb.position);
   const key = (cellIdx: Position) => createCellIndexKey(cellIdx);
 
-  console.log(`💥 DEBUG computeExplosionCells:`);
-  console.log(`   Bomb at pixel: (${bomb.position.x}, ${bomb.position.y})`);
-  console.log(`   Bomb cell index: (${bombCellIndex.x}, ${bombCellIndex.y})`);
-  console.log(`   Flame range: ${bomb.flameRange}`);
+  console.log(
+    `💥 computeExplosionCells: bomb at (${bombCellIndex.x}, ${bombCellIndex.y}), range: ${bomb.flameRange}`
+  );
 
+  // Add bomb cell itself
   unsafe.add(key(bombCellIndex));
+
+  // Pre-compute wall and chest cell indices for faster lookup and accurate matching
+  const solidWallCells = new Set<string>();
+  const destructibleCells = new Set<string>(); // chests + destructible walls
+
+  // Convert walls to cell indices (more reliable than pixel comparison)
+  for (const wall of gameState.map.walls) {
+    const cellIdx = pixelToCellIndex(wall.position);
+    const cellKey = key(cellIdx);
+    if (!wall.isDestructible) {
+      solidWallCells.add(cellKey);
+    } else {
+      destructibleCells.add(cellKey);
+    }
+  }
+
+  // Convert chests to cell indices
+  for (const chest of gameState.map.chests || []) {
+    const cellIdx = pixelToCellIndex(chest.position);
+    destructibleCells.add(key(cellIdx));
+  }
 
   const directions = [
     { x: 0, y: -1 }, // UP
@@ -352,8 +429,11 @@ export function computeExplosionCells(
     { x: 1, y: 0 }, // RIGHT
   ];
 
+  // Calculate map bounds in cells
+  const maxCellX = Math.floor(gameState.map.width / CELL_SIZE);
+  const maxCellY = Math.floor(gameState.map.height / CELL_SIZE);
+
   for (const dir of directions) {
-    console.log(`   🔥 Direction: dx=${dir.x}, dy=${dir.y}`);
     let currentCell = { ...bombCellIndex };
 
     for (let i = 1; i <= (bomb.flameRange || 2); i++) {
@@ -362,37 +442,36 @@ export function computeExplosionCells(
         y: currentCell.y + dir.y,
       };
 
-      console.log(
-        `      Range ${i}: cell (${currentCell.x}, ${currentCell.y})`
-      );
+      // Check bounds first
+      if (
+        currentCell.x < 0 ||
+        currentCell.x >= maxCellX ||
+        currentCell.y < 0 ||
+        currentCell.y >= maxCellY
+      ) {
+        break;
+      }
 
-      // Mark the cell as unsafe
-      unsafe.add(key(currentCell));
+      const cellKey = key(currentCell);
 
-      // Check for solid wall at this cell (convert to pixel for checking)
-      const pixelPos = {
-        x: currentCell.x * CELL_SIZE,
-        y: currentCell.y * CELL_SIZE,
-      };
+      // Check if blocked by solid wall (non-destructible)
+      // Solid walls BLOCK explosion completely - don't add this cell
+      if (solidWallCells.has(cellKey)) {
+        break;
+      }
 
-      const isSolidWall = gameState.map.walls.some(
-        (w) =>
-          w.position.x === pixelPos.x &&
-          w.position.y === pixelPos.y &&
-          !w.isDestructible
-      );
+      // Add this cell to unsafe zone
+      unsafe.add(cellKey);
 
-      if (isSolidWall) {
-        console.log(
-          `      BLOCKED by solid wall at (${pixelPos.x}, ${pixelPos.y})`
-        );
+      // Check if blocked by destructible (chest or destructible wall)
+      // Explosion HITS destructible, but stops propagating beyond it
+      if (destructibleCells.has(cellKey)) {
         break;
       }
     }
   }
 
   console.log(`   💥 Total unsafe cells: ${unsafe.size}`);
-  console.log(`   💥 Unsafe cell list: [${Array.from(unsafe).join(", ")}]`);
   return unsafe;
 }
 
@@ -425,13 +504,31 @@ export function canEscapeFromBomb(
   const startKey = createCellIndexKey(startCellIndex);
   console.log(`   Start key: ${startKey}`);
 
-  // If already safe
+  // If cell is not in unsafe set, verify with pixel-level distance
   if (!unsafe.has(startKey)) {
-    console.log(`   ✅ Already safe! Start position not in danger zone`);
-    return true;
-  }
+    console.log(`   ℹ️ Start cell not in unsafe cell set, verifying pixel distance...`);
 
-  console.log(`   ⚠️ Start position IS in danger zone, need to find escape`);
+    // ADDITIONAL CHECK: Verify pixel-level safety for accuracy
+    const pixelDistance = manhattanDistance(startPos, bomb.position);
+    const dangerRadius = bomb.flameRange * cellSize + 15; // Add safety margin
+
+    if (pixelDistance > dangerRadius) {
+      console.log(
+        `   ✅ Confirmed safe by pixel distance (${pixelDistance.toFixed(
+          0
+        )}px > ${dangerRadius}px)`
+      );
+      return true;
+    } else {
+      console.log(
+        `   ⚠️ Cell safe but pixel distance close (${pixelDistance.toFixed(
+          0
+        )}px <= ${dangerRadius}px), continuing BFS search...`
+      );
+    }
+  } else {
+    console.log(`   ⚠️ Start position IS in danger zone, need to find escape`);
+  }
 
   // BFS queue: each entry is {cellIndex, steps} where steps = number of cell moves from start
   const queue: { cellIndex: Position; steps: number }[] = [
@@ -487,13 +584,13 @@ export function canEscapeFromBomb(
         `      Checking neighbor: (${nextCellIndex.x}, ${nextCellIndex.y}), key: ${key}`
       );
 
+      // Check visited first (but don't add yet)
       if (visited.has(key)) {
         console.log(`      ⏭️ Already visited`);
         continue;
       }
-      visited.add(key);
 
-      // bounds check
+      // Bounds check BEFORE marking as visited
       if (
         !isWithinCellBounds(
           nextCellIndex,
@@ -505,19 +602,8 @@ export function canEscapeFromBomb(
         continue;
       }
 
-      // wall/chest blocker check using unified collision system
-      const pixelPos = {
-        x: nextCellIndex.x * CELL_SIZE,
-        y: nextCellIndex.y * CELL_SIZE,
-      };
-
-      // const isBlocked =
-      //   gameState.map.walls.some(
-      //     (w) => w.position.x === pixelPos.x && w.position.y === pixelPos.y
-      //   ) ||
-      //   gameState.map.chests.some(
-      //     (c) => c.position.x === pixelPos.x && c.position.y === pixelPos.y
-      //   );
+      // Wall/chest blocker check using unified collision system
+      const pixelPos = cellToPixelCorner(nextCellIndex);
 
       if (isBlocked(pixelPos, gameState, WALL_SIZE)) {
         console.log(
@@ -526,37 +612,55 @@ export function canEscapeFromBomb(
         continue;
       }
 
+      // Calculate arrival time for this cell
       const nextSteps = node.steps + 1;
       const distancePx = nextSteps * CELL_SIZE; // pixels needed to reach this cell
+      const pixelsPerSecond = (1000 / moveIntervalMs) * pixelsPerMove;
+      const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
 
       console.log(
         `      ✅ Valid neighbor, distance: ${distancePx}px, unsafe: ${unsafe.has(
           key
-        )}`
+        )}, arrival: ${arrivalTimeMs.toFixed(0)}ms`
       );
 
-      // If this cell is not in unsafe set, evaluate time to reach
-      if (!unsafe.has(key)) {
-        // Bot di chuyển với continuous movement ~17ms/tick
-        // pixelsPerMove = botSpeed * MOVE_STEP_SIZE (default: 1 * 3 = 3px/tick)
-        // Tốc độ: (1000ms / 17ms) * 3px ≈ 176 px/s với speed=1
-        const pixelsPerSecond = (1000 / 17) * pixelsPerMove;
-        const timeNeededMs = (distancePx / pixelsPerSecond) * 1000;
+      // CRITICAL FIX: Check if we can pass through unsafe cells before bomb explodes
+      if (unsafe.has(key)) {
+        // Cell is in explosion zone - can only pass if we get through BEFORE bomb explodes
+        if (arrivalTimeMs >= timeRemaining) {
+          console.log(
+            `      ⚠️ Unsafe cell but arrival time ${arrivalTimeMs.toFixed(
+              0
+            )}ms >= bomb time ${timeRemaining}ms - skip`
+          );
+          continue; // Can't pass through this unsafe cell in time
+        }
+        console.log(
+          `      ⚠️ Unsafe cell but can pass through (arrival ${arrivalTimeMs.toFixed(
+            0
+          )}ms < bomb ${timeRemaining}ms)`
+        );
+      }
 
+      // NOW it's safe to mark as visited (after all validation)
+      visited.add(key);
+
+      // If this cell is SAFE (not in unsafe set), check if we can reach it in time
+      if (!unsafe.has(key)) {
         console.log(
           `     🎯 SAFE CELL FOUND: (${nextCellIndex.x}, ${nextCellIndex.y})`
         );
         console.log(`        Distance: ${distancePx}px`);
         console.log(`        Speed: ${pixelsPerSecond.toFixed(1)}px/s`);
-        console.log(`        Time needed: ${timeNeededMs.toFixed(0)}ms`);
+        console.log(`        Arrival time: ${arrivalTimeMs.toFixed(0)}ms`);
         console.log(`        Time remaining: ${timeRemaining}ms`);
 
-        if (timeNeededMs <= timeRemaining) {
+        if (arrivalTimeMs <= timeRemaining) {
           console.log(`     ✅ CAN ESCAPE! Found safe position in time`);
           return true; // found escape
         } else {
           console.log(
-            `     ❌ Too slow! Need ${timeNeededMs.toFixed(
+            `     ❌ Too slow! Need ${arrivalTimeMs.toFixed(
               0
             )}ms but only have ${timeRemaining}ms`
           );
@@ -564,7 +668,7 @@ export function canEscapeFromBomb(
         // else: even though safe, cannot reach in time; continue exploring
       }
 
-      // enqueue for further exploration
+      // Enqueue for further exploration (if cell passed all checks)
       console.log(`      📝 Adding to queue for further exploration`);
       queue.push({ cellIndex: nextCellIndex, steps: nextSteps });
     }

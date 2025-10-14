@@ -101,15 +101,20 @@ export class EscapeStrategy extends BaseStrategy {
     console.log(
       `⚠️ No adjacent safe positions, searching distant safe zones...`
     );
-    return this.findDistantSafePosition(gameState);
+    const distantResult = this.findDistantSafePosition(gameState);
+    return distantResult ? distantResult.nextStep : null;
   }
 
   /**
    * Uses A* pathfinding to find path to distant safe positions.
    * @param gameState The current game state.
-   * @returns The next position to move toward distant safe zone, or null if none found.
+   * @returns Object with next step and full path, or null if none found.
    */
-  private findDistantSafePosition(gameState: GameState): Position | null {
+  private findDistantSafePosition(gameState: GameState): {
+    nextStep: Position;
+    fullPath: Position[];
+    target: Position;
+  } | null {
     const currentPos = gameState.currentBot.position;
     const SEARCH_RADIUS = 200; // pixels - reasonable search area
     const CELL_SIZE = 40; // Convert to cells for pathfinding
@@ -170,13 +175,17 @@ export class EscapeStrategy extends BaseStrategy {
       }
     }
 
-    if (bestPath && bestPath.length > 1) {
+    if (bestPath && bestPath.length > 1 && bestTarget) {
       const nextStep = bestPath[1]; // First step in path (index 0 is current position)
       if (nextStep) {
         console.log(
-          `🛤️ Found path to safe zone (${bestTarget?.x}, ${bestTarget?.y}), next step: (${nextStep.x}, ${nextStep.y})`
+          `🛤️ Found path to safe zone (${bestTarget.x}, ${bestTarget.y}), next step: (${nextStep.x}, ${nextStep.y}), path length: ${bestPath.length}`
         );
-        return nextStep;
+        return {
+          nextStep,
+          fullPath: bestPath,
+          target: bestTarget,
+        };
       }
     }
 
@@ -260,15 +269,11 @@ export class EscapeStrategy extends BaseStrategy {
 
       if (this.emergencyAttempts >= this.MAX_EMERGENCY_ATTEMPTS) {
         console.log(
-          `🛑 MAX EMERGENCY ATTEMPTS REACHED - Forcing complete stop to break loop`
+          `🛑 MAX EMERGENCY ATTEMPTS REACHED - Resetting state and allowing other strategies`
         );
         this.resetEmergencyState();
-        return this.createDecision(
-          BotAction.STOP,
-          this.priority,
-          "Emergency loop detected - forcing stop to break cycle",
-          Direction.STOP
-        );
+        // Return null instead of STOP to allow other strategies (WallBreaker, Explore) to try
+        return null;
       }
     } else {
       // Reset attempts if position changed
@@ -277,20 +282,29 @@ export class EscapeStrategy extends BaseStrategy {
     }
 
     // First, check if we're completely surrounded by enemy players
-    // const allDirectionsBlockedByPlayers =
-    //   this.areAllDirectionsBlockedByPlayers(gameState);
-    // if (allDirectionsBlockedByPlayers) {
-    //   console.log(
-    //     `⚠️ ALL DIRECTIONS BLOCKED BY PLAYERS - Trying alternative strategies...`
-    //   );
-    //   return this.handleCompletePlayerBlockage(gameState);
-    // }
+    const allDirectionsBlockedByPlayers =
+      this.areAllDirectionsBlockedByPlayers(gameState);
+    if (allDirectionsBlockedByPlayers) {
+      console.log(
+        `⚠️ ALL DIRECTIONS BLOCKED BY PLAYERS - Trying alternative strategies...`
+      );
+      return this.handleCompletePlayerBlockage(gameState);
+    }
 
-    const directions = [
-      Direction.UP,
-      Direction.DOWN,
-      Direction.LEFT,
-      Direction.RIGHT,
+    // Check 4 cardinal directions + 4 diagonal directions for more escape options
+    const directionsToCheck: Array<{
+      primary: Direction;
+      offset: { dx: number; dy: number };
+    }> = [
+      { primary: Direction.UP, offset: { dx: 0, dy: -1 } },
+      { primary: Direction.DOWN, offset: { dx: 0, dy: 1 } },
+      { primary: Direction.LEFT, offset: { dx: -1, dy: 0 } },
+      { primary: Direction.RIGHT, offset: { dx: 1, dy: 0 } },
+      // Diagonal movements (use primary direction, but check diagonal position)
+      { primary: Direction.UP, offset: { dx: -1, dy: -1 } }, // UP-LEFT
+      { primary: Direction.UP, offset: { dx: 1, dy: -1 } }, // UP-RIGHT
+      { primary: Direction.DOWN, offset: { dx: -1, dy: 1 } }, // DOWN-LEFT
+      { primary: Direction.DOWN, offset: { dx: 1, dy: 1 } }, // DOWN-RIGHT
     ];
     const possibleMoves: {
       direction: Direction;
@@ -300,17 +314,20 @@ export class EscapeStrategy extends BaseStrategy {
 
     // Use smaller movement step for emergency escape (similar to bot movement)
     const EMERGENCY_STEP = 3; // Small step like bot movement
-    const LOOKAHEAD_STEPS = 10; // Check 10 steps ahead (30px total)
+    const LOOKAHEAD_STEPS = 30; // Check 30 steps ahead (90px total) - increased for better coverage
 
-    for (const direction of directions) {
-      const newPos = getPositionInDirection(
-        currentPos,
-        direction,
-        EMERGENCY_STEP
-      );
+    for (const dirInfo of directionsToCheck) {
+      // Calculate position using offset
+      const newPos = {
+        x: currentPos.x + dirInfo.offset.dx * EMERGENCY_STEP,
+        y: currentPos.y + dirInfo.offset.dy * EMERGENCY_STEP,
+      };
 
+      const isDiagonal = dirInfo.offset.dx !== 0 && dirInfo.offset.dy !== 0;
       console.log(
-        `🔍 Testing direction ${direction}: (${currentPos.x}, ${currentPos.y}) -> (${newPos.x}, ${newPos.y})`
+        `🔍 Testing ${isDiagonal ? "diagonal " : ""}direction ${
+          dirInfo.primary
+        }: (${currentPos.x}, ${currentPos.y}) -> (${newPos.x}, ${newPos.y})`
       );
 
       // ENHANCED bounds check with unified safety margin
@@ -321,7 +338,7 @@ export class EscapeStrategy extends BaseStrategy {
         newPos.y >= gameState.map.height - EDGE_SAFETY_MARGIN
       ) {
         console.log(
-          `❌ Direction ${direction}: Too close to bounds (safety margin)!`
+          `❌ Direction ${dirInfo.primary}: Too close to bounds (safety margin)!`
         );
         continue;
       }
@@ -329,19 +346,22 @@ export class EscapeStrategy extends BaseStrategy {
       // Enhanced collision check - look ahead multiple steps
       let canMoveInDirection = true;
       let finalSafePos = newPos;
+      let stepsBeforeBlocked = 0;
 
       // Check immediate position
       if (!canMoveTo(newPos, gameState)) {
-        console.log(`❌ Direction ${direction}: Immediate position blocked`);
+        console.log(
+          `❌ Direction ${dirInfo.primary}: Immediate position blocked`
+        );
         canMoveInDirection = false;
       } else {
+        stepsBeforeBlocked = 1; // At least can move immediate step
         // Check trajectory for next few steps to avoid getting stuck
         for (let step = 2; step <= LOOKAHEAD_STEPS; step++) {
-          const futurePos = getPositionInDirection(
-            currentPos,
-            direction,
-            EMERGENCY_STEP * step
-          );
+          const futurePos = {
+            x: currentPos.x + dirInfo.offset.dx * EMERGENCY_STEP * step,
+            y: currentPos.y + dirInfo.offset.dy * EMERGENCY_STEP * step,
+          };
 
           // ENHANCED bounds check with unified safety margin
           if (
@@ -351,18 +371,25 @@ export class EscapeStrategy extends BaseStrategy {
             futurePos.y >= gameState.map.height - EDGE_SAFETY_MARGIN
           ) {
             console.log(
-              `⚠️ Direction ${direction}: Too close to bounds at step ${step} (${futurePos.x}, ${futurePos.y})`
+              `⚠️ Direction ${dirInfo.primary}: Too close to bounds at step ${step} (${futurePos.x}, ${futurePos.y})`
             );
             break;
           }
 
           if (!canMoveTo(futurePos, gameState)) {
             console.log(
-              `⚠️ Direction ${direction}: Blocked at step ${step} (${futurePos.x}, ${futurePos.y})`
+              `⚠️ Direction ${dirInfo.primary}: Blocked at step ${step} (${futurePos.x}, ${futurePos.y})`
             );
-            // Can still move a bit but will hit obstacle soon
+            // REJECT if blocked too soon (within 10 steps = 30px)
+            if (step <= 10) {
+              console.log(
+                `❌ Direction ${dirInfo.primary}: Blocked too soon (step ${step}), rejecting this direction`
+              );
+              canMoveInDirection = false;
+            }
             break;
           } else {
+            stepsBeforeBlocked = step;
             finalSafePos = futurePos; // Update to furthest safe position
           }
         }
@@ -373,12 +400,16 @@ export class EscapeStrategy extends BaseStrategy {
         let score = this.calculateEmergencyScore(finalSafePos, gameState);
 
         console.log(
-          `📊 Direction ${direction}: Score ${score} - can move to (${finalSafePos.x}, ${finalSafePos.y})`
+          `📊 Direction ${dirInfo.primary}: Score ${score}, steps before blocked: ${stepsBeforeBlocked}, final pos: (${finalSafePos.x}, ${finalSafePos.y})`
         );
-        possibleMoves.push({ direction, score, newPos: finalSafePos });
+        possibleMoves.push({
+          direction: dirInfo.primary,
+          score,
+          newPos: finalSafePos,
+        });
       } else {
         console.log(
-          `❌ Direction ${direction}: Cannot move to position (blocked immediately)`
+          `❌ Direction ${dirInfo.primary}: Cannot move to position (blocked or blocked too soon)`
         );
       }
     }
@@ -403,7 +434,37 @@ export class EscapeStrategy extends BaseStrategy {
       }
     }
 
-    console.log(`❌ No emergency moves available!`);
+    // FALLBACK: Try distant pathfinding as last resort
+    console.log(
+      `⚠️ No immediate emergency moves, trying distant pathfinding...`
+    );
+    const distantResult = this.findDistantSafePosition(gameState);
+
+    if (distantResult) {
+      const direction = getDirectionToTarget(
+        currentPos,
+        distantResult.nextStep
+      );
+      console.log(
+        `🛤️ EMERGENCY FALLBACK: Found path to safe zone at (${distantResult.target.x}, ${distantResult.target.y})`
+      );
+      console.log(
+        `   Next step: (${distantResult.nextStep.x}, ${distantResult.nextStep.y}), direction: ${direction}`
+      );
+      console.log(`   Full path: ${distantResult.fullPath.length} steps`);
+      console.log(`🚨 === EMERGENCY ESCAPE EVALUATION END ===`);
+
+      return this.createDecision(
+        BotAction.MOVE,
+        this.priority,
+        `Escape (Emergency Distant) - pathfinding to safe zone`,
+        direction,
+        distantResult.target,
+        distantResult.fullPath
+      );
+    }
+
+    console.log(`❌ No emergency moves available (exhausted all options)!`);
     console.log(`🚨 === EMERGENCY ESCAPE EVALUATION END ===`);
     return null;
   }
@@ -600,14 +661,16 @@ export class EscapeStrategy extends BaseStrategy {
     if (distantEscape) {
       const direction = getDirectionToTarget(
         gameState.currentBot.position,
-        distantEscape
+        distantEscape.nextStep
       );
       console.log(`🛤️ Strategy 3: Using distant pathfinding to bypass players`);
       return this.createDecision(
         BotAction.MOVE,
         this.priority,
         "Emergency escape via distant pathfinding",
-        direction
+        direction,
+        distantEscape.target,
+        distantEscape.fullPath
       );
     }
 

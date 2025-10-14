@@ -56,11 +56,13 @@ export class BombermanAI {
     if (elapsedTime > 3000) {
       this.justPlacedBomb = false;
       this.bombPlacementPosition = null;
-      console.log(`✅ Emergency escape period ended (${elapsedTime}ms elapsed)`);
+      console.log(
+        `✅ Emergency escape period ended (${elapsedTime}ms elapsed)`
+      );
       return false;
     }
 
-    // Check if we're close to the bomb placement position
+    // Check if we're still close to the bomb placement position
     const currentPos = gameState.currentBot.position;
     const distance =
       Math.abs(currentPos.x - this.bombPlacementPosition.x) +
@@ -68,7 +70,20 @@ export class BombermanAI {
 
     const flameRange = gameState.currentBot.flameRange || 2;
     const dangerRadius = (flameRange + 1) * CELL_SIZE; // Add 1 cell safety margin
-    return distance < dangerRadius;
+
+    const isStillInDanger = distance < dangerRadius;
+
+    // If we've escaped far enough, end emergency mode early
+    if (!isStillInDanger && elapsedTime > 1000) {
+      this.justPlacedBomb = false;
+      this.bombPlacementPosition = null;
+      console.log(
+        `✅ Escaped to safety! Distance: ${distance}px (safe at ${dangerRadius}px), ending emergency mode early`
+      );
+      return false;
+    }
+
+    return isStillInDanger;
   }
 
   /**
@@ -132,6 +147,45 @@ export class BombermanAI {
     console.log(
       `🤖 Bot decided: ${bestDecision.reason} (Priority: ${bestDecision.priority})`
     );
+
+    return bestDecision;
+  }
+
+  public makeDecisionEscape(gameState: GameState): BotDecision {
+    const escapeStrategy = this.strategies.find(
+      (s) => s.name === "Escape"
+    ) as EscapeStrategy;
+    if (escapeStrategy) {
+      const emergencyDecision = escapeStrategy.handleEmergency(gameState);
+      if (emergencyDecision) {
+        console.log(`🏃 EMERGENCY ESCAPE: ${emergencyDecision.reason}`);
+        return emergencyDecision;
+      }
+    }
+
+    const decisions: BotDecision[] = this.strategies
+      .map((strategy) => {
+        try {
+          return strategy.evaluate(gameState);
+        } catch (error) {
+          console.error(`Error in strategy ${strategy.name}:`, error);
+          return null;
+        }
+      })
+      .filter((decision): decision is BotDecision => decision !== null);
+
+    if (decisions.length === 0) {
+      return {
+        action: BotAction.STOP,
+        direction: Direction.STOP,
+        priority: 0,
+        reason: "No suitable strategy found - standing still",
+      };
+    }
+
+    decisions.sort((a, b) => b.priority - a.priority);
+
+    const bestDecision = decisions[0]!;
 
     return bestDecision;
   }

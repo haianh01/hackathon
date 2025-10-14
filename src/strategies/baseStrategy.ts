@@ -31,6 +31,7 @@ export abstract class BaseStrategy implements BotStrategy {
    * @param reason A descriptive reason for the decision.
    * @param direction The direction to move, if applicable.
    * @param target The target position, if applicable.
+   * @param path The full path from pathfinding, if applicable.
    * @returns A BotDecision object.
    */
   protected createDecision(
@@ -38,7 +39,8 @@ export abstract class BaseStrategy implements BotStrategy {
     priority: number,
     reason: string,
     direction?: Direction,
-    target?: Position
+    target?: Position,
+    path?: Position[]
   ): BotDecision {
     const decision: BotDecision = { action, priority, reason };
 
@@ -47,6 +49,9 @@ export abstract class BaseStrategy implements BotStrategy {
     }
     if (target) {
       decision.target = target;
+    }
+    if (path && path.length > 0) {
+      decision.path = path;
     }
 
     return decision;

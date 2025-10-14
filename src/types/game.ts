@@ -163,6 +163,7 @@ export interface BotDecision {
   action: BotAction;
   direction?: Direction;
   target?: Position;
+  path?: Position[]; // Full path from pathfinding (for multi-step navigation)
   priority: number;
   reason: string;
 }

@@ -20,7 +20,7 @@ export const EDGE_SAFETY_MARGIN = 20; // Safety margin from map edges
 
 // === MOVEMENT CONSTANTS ===
 export const MOVE_STEP_SIZE = 3; // Server moves 3px per step
-export const MOVE_INTERVAL_MS = 200; // Default movement interval
+export const MOVE_INTERVAL_MS = 17; // Default movement interval
 
 // === COORDINATE CONVERSION UTILITIES ===
 import { Position } from "../types";

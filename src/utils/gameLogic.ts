@@ -52,7 +52,7 @@ export function isPositionInDangerZone(
 
 /**
  * Kiểm tra xem vị trí có nằm trong phạm vi nổ của bom không
- * Sử dụng AABB collision để check toàn bộ bot hitbox (30x30px)
+ * Sử dụng center distance check trước, sau đó mới dùng AABB collision
  */
 export function isPositionInBombRange(
   position: Position,
@@ -61,7 +61,24 @@ export function isPositionInBombRange(
 ): boolean {
   const CELL_SIZE = 40; // Flame cell size
   const PLAYER_SIZE = 30; // Bot hitbox size
+  const SAFETY_MARGIN = 5; // pixels buffer
 
+  // OPTIMIZATION: Check center-to-center distance first for quick reject
+  const centerDistance = Math.hypot(
+    position.x - bomb.position.x,
+    position.y - bomb.position.y
+  );
+
+  // If bot center is far enough from bomb center, definitely safe
+  // Formula: bombRange * CELL_SIZE + PLAYER_SIZE/2 + SAFETY_MARGIN
+  const safeDistance =
+    bomb.flameRange * CELL_SIZE + PLAYER_SIZE / 2 + SAFETY_MARGIN;
+
+  if (centerDistance > safeDistance) {
+    return false; // Definitely safe - no need for detailed AABB checks
+  }
+
+  // DETAILED CHECK: If close, use AABB collision for precise detection
   // Kiểm tra collision với bomb center (bomb occupies full cell)
   if (checkBoxCollision(position, PLAYER_SIZE, bomb.position, CELL_SIZE)) {
     return true;
