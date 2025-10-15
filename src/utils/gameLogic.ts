@@ -68,13 +68,27 @@ export function isPositionInBombRange(
     position.x - bomb.position.x,
     position.y - bomb.position.y
   );
+  console.log(
+    "%c🤪 ~ file: gameLogic.ts:67 [] -> centerDistance : ",
+    "color: #a960ab",
+    position,
+    bomb
+  );
 
   // If bot center is far enough from bomb center, definitely safe
-  // Formula: bombRange * CELL_SIZE + PLAYER_SIZE/2 + SAFETY_MARGIN
+  // Formula: (flameRange * CELL_SIZE) + CELL_SIZE/2 (bomb half) + PLAYER_SIZE/2 (bot half) + SAFETY_MARGIN
+  // This accounts for: bomb center -> edge of furthest flame cell + bot radius + margin
   const safeDistance =
-    bomb.flameRange * CELL_SIZE + PLAYER_SIZE / 2 + SAFETY_MARGIN;
+    bomb.flameRange * CELL_SIZE + CELL_SIZE / 2 + PLAYER_SIZE / 2 + SAFETY_MARGIN;
+  console.log(
+    "%c🤪 ~ file: gameLogic.ts:78 [] -> safeDistance : ",
+    "color: #247c34",
+    safeDistance,
+    `flameRange=${bomb.flameRange}`
+  );
 
   if (centerDistance > safeDistance) {
+    console.log("✅ Quick check: Bot is definitely safe (far from bomb)");
     return false; // Definitely safe - no need for detailed AABB checks
   }
 

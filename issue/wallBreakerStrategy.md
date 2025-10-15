@@ -135,3 +135,6 @@
   // because bomb turns safe zone → danger zone
   canEscape = canEscapeFromBomb(snappedBombPos, simulatedBomb, tempGameState);
   return canEscape;
+
+Enemy score nhỏ so với chest (evaluateBombPosition)
+Bot có thể bỏ lỡ cơ hội đánh enemy

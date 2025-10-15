@@ -62,6 +62,33 @@ export class GameEngine {
   }
 
   /**
+   * Adds a new bomb to the game state immediately (real-time update).
+   * This is called when receiving bomb placement events from the server.
+   * @param bombData The raw bomb data from the server event.
+   */
+  public addBombRealtime(bombData: any): void {
+    const newBomb: Bomb = {
+      id: bombData.id || `bomb-${bombData.x}-${bombData.y}`,
+      position: { x: bombData.x, y: bombData.y },
+      ownerId: bombData.uid || bombData.ownerId,
+      timeRemaining: bombData.timeRemaining ?? 5000,
+      flameRange: bombData.range || bombData.explosionRange || bombData.flameRange || 2,
+    };
+
+    // Add to bombs array if not already present
+    const existingBomb = this.gameState.map.bombs.find(
+      (b) => b.position.x === newBomb.position.x && b.position.y === newBomb.position.y
+    );
+
+    if (!existingBomb) {
+      this.gameState.map.bombs.push(newBomb);
+      console.log(
+        `💣 Bomb added to gameState: (${newBomb.position.x}, ${newBomb.position.y}), flameRange=${newBomb.flameRange}, total bombs=${this.gameState.map.bombs.length}`
+      );
+    }
+  }
+
+  /**
    * Checks if the game is currently running.
    * @returns True if the game is running, false otherwise.
    */

@@ -17,6 +17,7 @@ import {
   BombStrategy,
 } from "../strategies";
 import { CELL_SIZE } from "../utils";
+import { GamePhaseAnalyzer } from "./gamePhaseAnalyzer";
 
 /**
  * The main AI engine for controlling the bot.
@@ -50,14 +51,29 @@ export class BombermanAI {
       return false;
     }
 
-    // Keep immediate escape active for longer to ensure bot gets to safety
-    // Bomb explodes after ~5 seconds, so keep emergency mode for 3 seconds minimum
     const elapsedTime = Date.now() - this.bombPlacementTime;
+
+    // TIMEOUT: Max 3 seconds emergency mode
     if (elapsedTime > 3000) {
       this.justPlacedBomb = false;
       this.bombPlacementPosition = null;
+      console.log(`✅ Emergency escape timeout (${elapsedTime}ms elapsed)`);
+      return false;
+    }
+
+    // Check if bomb still exists on map
+    const bombStillExists = gameState.map.bombs.some(
+      (b) =>
+        Math.abs(b.position.x - this.bombPlacementPosition!.x) < 20 &&
+        Math.abs(b.position.y - this.bombPlacementPosition!.y) < 20
+    );
+
+    if (!bombStillExists && elapsedTime > 500) {
+      // Bomb already exploded, safe now
+      this.justPlacedBomb = false;
+      this.bombPlacementPosition = null;
       console.log(
-        `✅ Emergency escape period ended (${elapsedTime}ms elapsed)`
+        `✅ Bomb already exploded after ${elapsedTime}ms, ending emergency mode`
       );
       return false;
     }
@@ -69,18 +85,25 @@ export class BombermanAI {
       Math.abs(currentPos.y - this.bombPlacementPosition.y);
 
     const flameRange = gameState.currentBot.flameRange || 2;
-    const dangerRadius = (flameRange + 1) * CELL_SIZE; // Add 1 cell safety margin
+    const dangerRadius = (flameRange + 1.5) * CELL_SIZE; // Add 1.5 cell safety margin
 
     const isStillInDanger = distance < dangerRadius;
 
-    // If we've escaped far enough, end emergency mode early
-    if (!isStillInDanger && elapsedTime > 1000) {
+    // EARLY EXIT: If escaped far enough (after at least 500ms to avoid flicker)
+    if (!isStillInDanger && elapsedTime > 500) {
       this.justPlacedBomb = false;
       this.bombPlacementPosition = null;
       console.log(
-        `✅ Escaped to safety! Distance: ${distance}px (safe at ${dangerRadius}px), ending emergency mode early`
+        `✅ Escaped to safety! Distance: ${distance}px (safe at ${dangerRadius}px), ending emergency mode after ${elapsedTime}ms`
       );
       return false;
+    }
+
+    // Still in danger
+    if (isStillInDanger) {
+      console.log(
+        `⚠️ Still in danger: distance ${distance}px < ${dangerRadius}px (elapsed: ${elapsedTime}ms)`
+      );
     }
 
     return isStillInDanger;
@@ -92,25 +115,67 @@ export class BombermanAI {
    * @returns The decision for the bot to execute.
    */
   public makeDecision(gameState: GameState): BotDecision {
-    if (this.needsImmediateEscape(gameState)) {
-      console.log(`🚨 IMMEDIATE ESCAPE NEEDED after bomb placement!`);
+    // if (this.needsImmediateEscape(gameState)) {
+    //   console.log(`🚨 IMMEDIATE ESCAPE NEEDED after bomb placement!`);
 
-      const escapeStrategy = this.strategies.find(
-        (s) => s.name === "Escape"
-      ) as EscapeStrategy;
-      if (escapeStrategy) {
-        const emergencyDecision = escapeStrategy.handleEmergency(gameState);
-        if (emergencyDecision) {
-          console.log(`🏃 EMERGENCY ESCAPE: ${emergencyDecision.reason}`);
-          return emergencyDecision;
-        }
-      }
-    }
+    //   const escapeStrategy = this.strategies.find(
+    //     (s) => s.name === "Escape"
+    //   ) as EscapeStrategy;
+    //   if (escapeStrategy) {
+    //     const emergencyDecision = escapeStrategy.handleEmergency(gameState);
+    //     if (emergencyDecision) {
+    //       console.log(`🏃 EMERGENCY ESCAPE: ${emergencyDecision.reason}`);
+    //       return emergencyDecision;
+    //     }
+    //   }
+    // }
+
+    // DYNAMIC PRIORITY ADJUSTMENT based on game phase
+    // const analysis = GamePhaseAnalyzer.getStrategyAdjustment(gameState);
+    // console.log(`\n🎮 === GAME PHASE ANALYSIS ===`);
+    // console.log(`📍 Phase: ${analysis.phase}`);
+    // console.log(`🎯 Priorities:`);
+    // console.log(`   Wall Breaking: ${analysis.priorities.wallBreaking}/100`);
+    // console.log(
+    //   `   Item Collection: ${analysis.priorities.itemCollection}/100`
+    // );
+    // console.log(`   Exploration: ${analysis.priorities.exploration}/100`);
+    // console.log(`   Combat: ${analysis.priorities.combat}/100`);
+    // console.log(`   Safety: ${analysis.priorities.safety}/100`);
+    // if (analysis.recommendations.length > 0) {
+    //   console.log(`💡 Recommendations:`);
+    //   analysis.recommendations.forEach((rec) => console.log(`   ${rec}`));
+    // }
+    console.log(`🎮 === GAME PHASE ANALYSIS END ===\n`);
 
     const decisions: BotDecision[] = this.strategies
       .map((strategy) => {
         try {
-          return strategy.evaluate(gameState);
+          const decision = strategy.evaluate(gameState);
+          if (!decision) return null;
+
+          // // Apply dynamic priority modifiers
+          // let adjustedPriority = decision.priority;
+
+          // // Adjust based on strategy type
+          // if (strategy.name === "WallBreaker") {
+          //   const modifier = (analysis.priorities.wallBreaking / 100) * 1.5;
+          //   adjustedPriority = decision.priority * modifier;
+          // } else if (strategy.name === "Collect") {
+          //   const modifier = (analysis.priorities.itemCollection / 100) * 1.5;
+          //   adjustedPriority = decision.priority * modifier;
+          // } else if (strategy.name === "Explore") {
+          //   const modifier = (analysis.priorities.exploration / 100) * 1.5;
+          //   adjustedPriority = decision.priority * modifier;
+          // } else if (strategy.name === "Attack") {
+          //   const modifier = (analysis.priorities.combat / 100) * 1.5;
+          //   adjustedPriority = decision.priority * modifier;
+          // }
+
+          return {
+            ...decision,
+            // priority: adjustedPriority,
+          };
         } catch (error) {
           console.error(`Error in strategy ${strategy.name}:`, error);
           return null;
@@ -134,18 +199,24 @@ export class BombermanAI {
     console.log(`📊 Available decisions: ${decisions.length}`);
     decisions.forEach((decision, index) => {
       console.log(
-        `  ${index + 1}. ${decision.reason} (Priority: ${decision.priority})`
+        `  ${index + 1}. ${
+          decision.reason
+        } (Priority: ${decision.priority.toFixed(1)})`
       );
     });
 
     const bestDecision = decisions[0]!;
     console.log(
-      `🏆 SELECTED: ${bestDecision.reason} (Priority: ${bestDecision.priority})`
+      `🏆 SELECTED: ${
+        bestDecision.reason
+      } (Priority: ${bestDecision.priority.toFixed(1)})`
     );
     console.log(`🧠 === AI DECISION MAKING END ===\n`);
 
     console.log(
-      `🤖 Bot decided: ${bestDecision.reason} (Priority: ${bestDecision.priority})`
+      `🤖 Bot decided: ${
+        bestDecision.reason
+      } (Priority: ${bestDecision.priority.toFixed(1)})`
     );
 
     return bestDecision;

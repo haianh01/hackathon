@@ -3,3 +3,4 @@
  */
 
 export * from "./bombermanAI";
+export * from "./gamePhaseAnalyzer";

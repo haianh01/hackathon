@@ -126,7 +126,10 @@ export class SocketConnection {
     });
 
     this.socket.on("player_move", (data: any) => {
+      // Always update position for any player (including enemies)
+      // This ensures gameState has accurate enemy positions
       if (data.uid === this.socket?.id) {
+        // Our bot's position update
         const oldPos = this.lastConfirmedPosition
           ? `(${this.lastConfirmedPosition.x}, ${this.lastConfirmedPosition.y})`
           : "unknown";
