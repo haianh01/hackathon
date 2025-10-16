@@ -203,6 +203,11 @@ export class EscapeStrategy extends BaseStrategy {
 
         // Check if position is safe and reachable
         const inDanger = isPositionInDangerZone(candidate, gameState);
+        console.log(
+          "%c🤪 ~ file: escapeStrategy.ts:205 [] -> inDanger : ",
+          "color: #efd121",
+          inDanger
+        );
         const canMove = canMoveTo(candidate, gameState);
 
         if (inDanger) {
@@ -226,8 +231,12 @@ export class EscapeStrategy extends BaseStrategy {
 
     if (safeCandidates.length === 0) {
       console.log(`❌ No safe candidates found in search area!`);
-      console.log(`   Search bounds: (${startX},${startY}) to (${endX},${endY})`);
-      console.log(`   Map size: ${gameState.map.width}x${gameState.map.height}`);
+      console.log(
+        `   Search bounds: (${startX},${startY}) to (${endX},${endY})`
+      );
+      console.log(
+        `   Map size: ${gameState.map.width}x${gameState.map.height}`
+      );
       return null;
     }
 

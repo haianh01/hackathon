@@ -6,6 +6,9 @@ import {
   Item,
   Wall,
   UserResponse,
+  Position,
+  Chest,
+  ItemCollectedEventData,
 } from "../types";
 
 /**
@@ -72,22 +75,193 @@ export class GameEngine {
       position: { x: bombData.x, y: bombData.y },
       ownerId: bombData.uid || bombData.ownerId,
       timeRemaining: bombData.timeRemaining ?? 5000,
-      flameRange: bombData.range || bombData.explosionRange || bombData.flameRange || 2,
+      flameRange:
+        bombData.range || bombData.explosionRange || bombData.flameRange || 2,
     };
 
     // Add to bombs array if not already present
     const existingBomb = this.gameState.map.bombs.find(
-      (b) => b.position.x === newBomb.position.x && b.position.y === newBomb.position.y
+      (b) =>
+        b.position.x === newBomb.position.x &&
+        b.position.y === newBomb.position.y
     );
 
     if (!existingBomb) {
       this.gameState.map.bombs.push(newBomb);
-      console.log(
-        `💣 Bomb added to gameState: (${newBomb.position.x}, ${newBomb.position.y}), flameRange=${newBomb.flameRange}, total bombs=${this.gameState.map.bombs.length}`
-      );
     }
   }
+  // ...existing code...
+  /**
+   * Remove a bomb from the game state that was exploded (realtime).
+   * Safe: checks for structure existence and attempts to update any danger maps.
+   */
+  public removeBombRealtime(bombId: string): void {
+    if (!bombId) return;
 
+    // Defensive checks for game state structure
+    if (
+      !this.gameState ||
+      !this.gameState.map ||
+      !Array.isArray(this.gameState.map.bombs)
+    ) {
+      return;
+    }
+
+    const bombs = this.gameState.map.bombs;
+    const idx = bombs.findIndex(
+      (b: any) => b && (b.id === bombId || b._id === bombId)
+    );
+    if (idx === -1) {
+      // nothing to remove
+      return;
+    }
+
+    const [removed] = bombs.splice(idx, 1);
+    // try {
+    //   if ((this as any).bombsById && (this as any).bombsById[bombId]) {
+    //     delete (this as any).bombsById[bombId];
+    //   }
+    // } catch (e) {
+    //   // ignore if not present
+    // }
+
+    // Recompute danger zones / caches if engine provides helpers
+    // if (typeof (this as any).recalculateDangerZones === "function") {
+    //   (this as any).recalculateDangerZones();
+    // } else if (typeof (this as any).updateDangerMap === "function") {
+    //   (this as any).updateDangerMap();
+    // }
+
+    console.log(`🧨 Bomb removed from state: ${bombId}`, removed);
+  }
+
+  /**
+   * Cập nhật trạng thái của Bot khi một Item được thu thập (realtime).
+   *
+   * Hàm này loại bỏ item đã được thu thập khỏi danh sách items của GameState
+   * và khỏi danh sách mục tiêu (targets) của Bot nếu có.
+   *
+   * @param data Thông tin sự kiện ItemCollectedEventData.
+   */
+  public handleItemCollected(data: ItemCollectedEventData): void {
+    // 1. Unified Defensive Check
+    if (
+      !data?.item ||
+      !this.gameState?.map?.items ||
+      !Array.isArray(this.gameState.map.items)
+    ) {
+      console.warn(
+        "⚡ Realtime: Invalid data or game state structure on ItemCollected event."
+      );
+      return;
+    }
+
+    const { x, y } = data.item;
+    const gameItems: Item[] = this.gameState.map.items;
+
+    // 2. Find the Item
+    // Tìm item dựa trên tọa độ x, y
+    const idx = gameItems.findIndex(
+      (item: Item) => item && item.position.x === x && item.position.y === y
+    );
+
+    // 3. Removal Check
+    if (idx === -1) {
+      console.warn(
+        `⚡ Realtime: Item collected event received for non-existent item at (${x}, ${y}).`
+      );
+      return;
+    }
+
+    // 4. Perform Removal from GameState
+    const [removedItem] = gameItems.splice(idx, 1);
+
+    // 5. Update Bot's Internal Logic (Crucial for Bot AI)
+
+    // 5a. CẬP NHẬT CHỈ SỐ CỦA BOT (Nếu bot của mình thu thập)
+    if (data.bomber && this.gameState.currentBot.id === data.bomber.uid) {
+      // Lưu ý: Trong một số protocol, chỉ số của bot (speed, bombCount, v.v.)
+      // được server tự động cập nhật trong sự kiện trạng thái (state update).
+      // Tuy nhiên, cập nhật sớm ở đây giúp logic bot phản ứng nhanh hơn.
+
+      // Cập nhật lại chỉ số của currentBot bằng dữ liệu mới nhất từ event
+      // Dùng destructuring để cập nhật trực tiếp
+      const { speed, bombCount, explosionRange, speedCount } = data.bomber;
+
+      this.gameState.currentBot = {
+        ...this.gameState.currentBot,
+        speed,
+        bombCount,
+        flameRange: explosionRange,
+        speedCount,
+      };
+    }
+
+    // 5b. HỦY BỎ MỤC TIÊU ĐANG NHẮM TỚI
+    // Nếu bot của bạn có một biến trạng thái (ví dụ: `this.targetPosition`)
+    // đang lưu trữ vị trí của item vừa bị thu thập, hãy reset nó.
+    // if (
+    //   instance.targetPosition &&
+    //   instance.targetPosition.x === x &&
+    //   instance.targetPosition.y === y
+    // ) {
+    //   instance.targetPosition = null;
+    //   console.log("🎯 Bot Goal Reset: Target item was collected.");
+    // }
+    // *Lưu ý quan trọng cho Bot AI:*
+    // Nếu Bot đang có mục tiêu là item này, hãy loại bỏ nó khỏi danh sách mục tiêu
+    // và kích hoạt lại logic tìm đường/quyết định (pathfinding/decision-making).
+
+    // Ví dụ: Kích hoạt tính toán lại hành động kế tiếp
+    // const instance = this as any;
+    // if (typeof instance.recalculateNextAction === "function") {
+    //   instance.recalculateNextAction();
+    // }
+  }
+
+  // ...existing code...
+  /**
+   * Remove a chest from the game state that was destroyed (realtime).
+   * Accepts either an id string, an object with { id | _id } or a position { x, y }.
+   * Returns the removed chest object or null if nothing removed.
+   */
+  public removeChestRealtime(position: Position) {
+    if (!position) return null;
+
+    // Defensive checks for game state structure
+    if (
+      !this.gameState ||
+      !this.gameState.map ||
+      !Array.isArray(this.gameState.map.chests)
+    ) {
+      return null;
+    }
+
+    const chests = this.gameState.map.chests;
+    const idx = chests.findIndex((c: Chest) => {
+      return c && c.position.x === position.x && c.position.y === position.y;
+    });
+    if (idx === -1) {
+      // nothing to remove
+      return;
+    }
+    const [removed] = chests.splice(idx, 1);
+
+    // If engine provides helpers to update caches/danger maps, call them
+    // if (typeof (this as any).recalculateMapCaches === "function") {
+    //   (this as any).recalculateMapCaches();
+    // } else if (typeof (this as any).updateMapState === "function") {
+    //   (this as any).updateMapState();
+    // }
+
+    // Lightweight debug log
+    // eslint-disable-next-line no-console
+    console.log("🧱 Chest removed from state:", removed);
+
+    return removed;
+  }
+
+  //
   /**
    * Checks if the game is currently running.
    * @returns True if the game is running, false otherwise.

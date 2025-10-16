@@ -120,6 +120,7 @@ export interface Bot {
   isAlive: boolean;
   score: number;
   name?: string;
+  speedCount?: number;
 }
 
 export interface Bomb {
@@ -141,11 +142,13 @@ export interface Wall {
   isDestructible: boolean;
 }
 
+export interface Chest extends Wall {}
+
 export interface GameMap {
   width: number;
   height: number;
   walls: Wall[]; // solid walls
-  chests: Wall[]; // destructible chests
+  chests: Chest[]; // destructible chests
   items: Item[];
   bombs: Bomb[];
   bots: Bot[];
@@ -166,4 +169,25 @@ export interface BotDecision {
   path?: Position[]; // Full path from pathfinding (for multi-step navigation)
   priority: number;
   reason: string;
+}
+
+export interface ItemCollectedEventData {
+  bomber: Bomber | null;
+  item: {
+    x: number;
+    y: number;
+    type: ItemType; // SPEED, EXPLOSION_RANGE, BOMB_COUNT
+  };
+}
+export interface ChestDestroyedEvent {
+  x: number;
+  y: number;
+  item: Item;
+}
+export interface BombExplodeEvent {
+  x: number; // pixel X của bomb
+  y: number; // pixel Y của bomb
+  uid: string; // id bot/owner của bomb
+  id: number; // bomb unique id
+  explosionArea: Position[]; // các ô bị ảnh hưởng
 }

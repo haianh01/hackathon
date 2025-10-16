@@ -6,10 +6,11 @@ import {
   UserResponse,
   Position,
   Direction,
+  ChestDestroyedEvent,
 } from "./types";
 import { SocketConnection } from "./connection/socketConnection";
 import { getDirectionToTarget } from "./utils/position";
-import { CELL_SIZE, isPositionInDangerZone } from "./utils";
+import { CELL_SIZE, isPositionInDangerZone, PLAYER_SIZE } from "./utils";
 
 /**
  * Main Bot class - the primary entry point for the application.
@@ -87,7 +88,11 @@ export class BomberManBot {
       }
     });
     this.socketConnection.onPositionUpdate((x: number, y: number) => {
-      console.log(`📍 Position updated from server: (${x}, ${y})`);
+      console.log(
+        `📍 Position updated from server: (${x}40, ${y}), (${Math.floor(
+          x / 40
+        )}, ${Math.floor(y / 40)})`
+      );
       this.gameEngine.updateBotPosition(x, y);
     });
 
@@ -135,17 +140,26 @@ export class BomberManBot {
     this.socketConnection.onBombExplode((data: any) => {
       console.log(`⚡ Realtime: Bomb exploded at (${data.x}, ${data.y})`);
       // TODO: Remove bomb from danger list
-      // this.gameEngine.removeBombRealtime(data.id);
+      this.gameEngine.removeBombRealtime(data.id);
+      if (data.uid === this.socketConnection.getMyBomberInfo()?.uid) {
+        // If our own bomb exploded, we can stop any ongoing emergency escape
+        console.log(
+          `💥 Our bomb exploded, clearing emergency escape state if any.`
+        );
+        this.botLogicInterval = setInterval(() => this.executeBotLogic(), 200);
+      }
     });
 
-    this.socketConnection.onChestDestroyed((data: any) => {
+    this.socketConnection.onChestDestroyed((data: ChestDestroyedEvent) => {
       console.log(`⚡ Realtime: Chest destroyed at (${data.x}, ${data.y})`);
       // TODO: An item might appear, needs re-evaluation
+      this.gameEngine.removeChestRealtime(data);
     });
 
     this.socketConnection.onItemCollected((data: any) => {
       console.log(`⚡ Realtime: Item collected at (${data.x}, ${data.y})`);
       // TODO: Remove item from target list if present
+      this.gameEngine.handleItemCollected(data);
     });
 
     this.socketConnection.onUserDie((data: any) => {
@@ -218,6 +232,11 @@ export class BomberManBot {
             );
             this.emergencyEscapePath = null;
             this.emergencyEscapeTarget = null;
+            if (this.botLogicInterval) {
+              clearInterval(this.botLogicInterval);
+              this.botLogicInterval = undefined;
+              console.log("⏹️ Stopped continuous move botLogicInterval.");
+            }
             // Fall through to normal AI decision
           } else if (distanceToTarget < REACHED_THRESHOLD && !isCurrentlySafe) {
             console.warn(
@@ -275,6 +294,7 @@ export class BomberManBot {
         this.emergencyEscapeTarget = null;
         this.socketConnection.stopContinuousMove();
       }
+
       this.lastBombCount = currentBombCount;
 
       const decisionStartTime = Date.now();
@@ -495,7 +515,7 @@ export class BomberManBot {
     // Formula: (range * cellSize) + safety margin
     const CELL_SIZE = 40;
     const SAFETY_MARGIN = 80; // 2 cells margin
-    const dangerRadius = bombRange * CELL_SIZE + SAFETY_MARGIN;
+    const dangerRadius = bombRange * CELL_SIZE + PLAYER_SIZE;
 
     console.log(
       `🔍 Bomb threat analysis: botPos=(${currentBot.position.x}, ${
@@ -510,40 +530,40 @@ export class BomberManBot {
     const isOnBomb = distance < 5;
 
     // Check if bot is in immediate danger
-    if (isOnBomb || distance < dangerRadius) {
-      if (isOnBomb) {
-        console.warn(
-          `🚨 JUST PLACED BOMB! Bot at bomb position, forcing immediate escape!`
-        );
-      }
-      console.warn(
-        `🚨 IMMEDIATE THREAT! Bomb ${distance.toFixed(
-          0
-        )}px away (danger threshold: ${dangerRadius}px)`
-      );
+    // if (isOnBomb || distance < dangerRadius) {
+    //   if (isOnBomb) {
+    //     console.warn(
+    //       `🚨 JUST PLACED BOMB! Bot at bomb position, forcing immediate escape!`
+    //     );
+    //   }
+    //   console.warn(
+    //     `🚨 IMMEDIATE THREAT! Bomb ${distance.toFixed(
+    //       0
+    //     )}px away (danger threshold: ${dangerRadius}px)`
+    //   );
 
-      // INTERRUPT current action immediately
-      this.socketConnection.stopContinuousMove();
-      this.clearPath();
+    //   // INTERRUPT current action immediately
+    //   this.socketConnection.stopContinuousMove();
+    //   this.clearPath();
 
-      // Get escape decision from AI (uses EscapeStrategy with A* pathfinding)
-      const gameState = this.gameEngine.getGameState();
-      const escapeDecision = this.ai.makeDecisionEscape(gameState);
+    //   // Get escape decision from AI (uses EscapeStrategy with A* pathfinding)
+    //   const gameState = this.gameEngine.getGameState();
+    //   const escapeDecision = this.ai.makeDecisionEscape(gameState);
 
-      console.log(`🏃 EMERGENCY ESCAPE: ${escapeDecision.reason}`);
+    //   console.log(`🏃 EMERGENCY ESCAPE: ${escapeDecision.reason}`);
 
-      // CRITICAL: Save emergency escape path so regular ticks can continue following it
-      if (escapeDecision.path && escapeDecision.path.length > 1) {
-        this.emergencyEscapePath = escapeDecision.path;
-        this.emergencyEscapeTarget = escapeDecision.target || null;
-        console.log(
-          `🛤️ Emergency path saved: ${escapeDecision.path.length} steps to (${escapeDecision.target?.x}, ${escapeDecision.target?.y})`
-        );
-      }
+    //   // CRITICAL: Save emergency escape path so regular ticks can continue following it
+    //   if (escapeDecision.path && escapeDecision.path.length > 1) {
+    //     this.emergencyEscapePath = escapeDecision.path;
+    //     this.emergencyEscapeTarget = escapeDecision.target || null;
+    //     console.log(
+    //       `🛤️ Emergency path saved: ${escapeDecision.path.length} steps to (${escapeDecision.target?.x}, ${escapeDecision.target?.y})`
+    //     );
+    //   }
 
-      // Execute emergency escape immediately (starts movement)
-      this.executeAction(escapeDecision);
-    }
+    //   // Execute emergency escape immediately (starts movement)
+    //   this.executeAction(escapeDecision);
+    // }
   }
 
   /**
