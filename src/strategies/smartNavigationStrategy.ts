@@ -27,8 +27,25 @@ export class SmartNavigationStrategy extends BaseStrategy {
       const escapeTarget = this.findEscapeTarget(gameState);
 
       if (escapeTarget) {
-        // Thử pathfinding trước
-        let path = Pathfinding.findPath(currentPos, escapeTarget, gameState);
+        // Kiểm tra xem bot có đang đứng trên bom không
+        const bombAtCurrentPosition = gameState.map.bombs.find((b) => {
+          const distance = Math.hypot(
+            currentPos.x - b.position.x,
+            currentPos.y - b.position.y
+          );
+          return distance < 5; // Trong vòng 5px = đang đứng trên bomb
+        });
+
+        // Thử pathfinding trước (cho phép đi qua bom của mình nếu đang đứng trên đó)
+        const pathfindingOptions = bombAtCurrentPosition
+          ? { allowOwnBomb: bombAtCurrentPosition.position }
+          : undefined;
+        let path = Pathfinding.findPath(
+          currentPos,
+          escapeTarget,
+          gameState,
+          pathfindingOptions
+        );
 
         // Nếu pathfinding thất bại, sử dụng direct movement
         if (path.length < 2) {

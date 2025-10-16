@@ -23,7 +23,7 @@ export const MOVE_STEP_SIZE = 3; // Server moves 3px per step
 export const MOVE_INTERVAL_MS = 17; // Default movement interval
 
 // === COORDINATE CONVERSION UTILITIES ===
-import { Position } from "../types";
+import { GameState, Position } from "../types";
 
 /**
  * Convert pixel coordinates to cell indices (for array access)
@@ -177,19 +177,11 @@ export function canMoveTo(
     position.y < 0 ||
     position.y + objectSize > gameState.map.height
   ) {
-    console.log(
-      "%c🤪 ~ file: c:Userslehaihackathonsrcutilsconstants.ts:150 [] -> canMoveTo : ",
-      "color: #571cce",
-      false
-    );
     return false;
   }
 
   // 2. Check walls and chests using unified collision
   if (isBlocked(position, gameState, objectSize)) {
-    console.log(
-      `❌ canMoveTo BLOCKED at (${position.x}, ${position.y}) - collision with walls/chests`
-    );
     return false;
   }
 
@@ -206,4 +198,10 @@ export function canMoveTo(
   // }
 
   return true;
+}
+export function isPositionBlocked(
+  position: Position,
+  gameState: GameState
+): boolean {
+  return isBlocked(position, gameState, PLAYER_SIZE);
 }

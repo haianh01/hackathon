@@ -23,9 +23,6 @@ export {
   isPositionInBombRange,
   getSafeAdjacentPositions,
   calculateBombScore,
-  // Legacy functions (deprecated)
-  isPositionBlocked as isPositionBlockedLegacy,
-  canMoveTo as canMoveToLegacy,
   isPositionCollidingWithWalls,
   canMoveToPositionPrecise,
 } from "./gameLogic";
@@ -38,9 +35,4 @@ export {
   getMapCellDimensions,
   createCellIndexKey,
   parsePositionKey,
-  // Legacy exports (deprecated)
-  pixelToCell as pixelToCellLegacy,
-  isWithinPixelBounds,
-  isWithinCellBounds as isWithinCellBoundsLegacy,
-  createPositionKey as createPositionKeyLegacy,
 } from "./coordinates";

@@ -1,6 +1,6 @@
 import io from "socket.io-client";
 import { Direction, UserResponse, Bomber } from "../types";
-import { MOVE_STEP_SIZE } from "../utils/coordinates";
+import { MOVE_STEP_SIZE } from "../utils";
 
 // Define the Socket type from socket.io-client
 type SocketType = ReturnType<typeof io>;

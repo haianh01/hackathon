@@ -1,5 +1,5 @@
 import { Position, Direction } from "../types";
-import { CELL_SIZE, MOVE_STEP_SIZE } from "./coordinates";
+import { CELL_SIZE, MOVE_STEP_SIZE } from "./constants";
 
 /**
  * Tính khoảng cách Manhattan giữa hai điểm

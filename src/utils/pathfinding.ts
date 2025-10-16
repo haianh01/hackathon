@@ -2,12 +2,7 @@ import { GameState, Position, Bomb } from "../types";
 import { manhattanDistance } from "./position";
 import { MinHeap } from "./minHeap";
 import {
-  CELL_SIZE,
-  MOVE_STEP_SIZE,
-  MOVE_INTERVAL_MS,
-  pixelToCell,
   pixelToCellIndex,
-  isWithinCellBounds,
   getMapCellDimensions,
   createCellIndexKey,
 } from "./coordinates";
@@ -16,6 +11,10 @@ import {
   isBlocked,
   cellToPixelCorner,
   WALL_SIZE,
+  isWithinCellBounds,
+  CELL_SIZE,
+  MOVE_STEP_SIZE,
+  MOVE_INTERVAL_MS,
 } from "./constants";
 
 /**
@@ -371,14 +370,6 @@ export function calculatePositionScore(
 }
 
 /**
- * Chuyển vị trí pixel sang vị trí ô (cell) căn giữa theo kích thước ô
- * @deprecated Use coordinates.pixelToCell instead
- */
-export function toCellPosition(pos: Position, cellSize = CELL_SIZE): Position {
-  return pixelToCell(pos);
-}
-
-/**
  * Tính danh sách ô bị ảnh hưởng bởi vụ nổ của 1 quả bom (conservative)
  * Explosion sẽ lan theo 4 hướng, dừng khi gặp tường cứng.
  * Returns cell indices as keys
@@ -506,7 +497,9 @@ export function canEscapeFromBomb(
 
   // If cell is not in unsafe set, verify with pixel-level distance
   if (!unsafe.has(startKey)) {
-    console.log(`   ℹ️ Start cell not in unsafe cell set, verifying pixel distance...`);
+    console.log(
+      `   ℹ️ Start cell not in unsafe cell set, verifying pixel distance...`
+    );
 
     // ADDITIONAL CHECK: Verify pixel-level safety for accuracy
     const pixelDistance = manhattanDistance(startPos, bomb.position);

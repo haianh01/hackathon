@@ -11,7 +11,6 @@ import {
   cellToPixel,
   pixelToCell,
   getPositionInDirection,
-  CELL_SIZE,
 } from "../utils";
 import { Pathfinding, canEscapeFromBomb } from "../utils/pathfinding";
 import { manhattanDistance } from "../utils/position";
@@ -46,15 +45,6 @@ export class WallBreakerStrategy extends BaseStrategy {
   > = new Map();
 
   private destroyedChests: Set<string> = new Set(); // Track destroyed chests
-
-  // Enhanced progress tracking
-  private lastTargetPosition: Position | null = null;
-  private noProgressCount = 0;
-  private readonly MAX_NO_PROGRESS = 5; // Max attempts without progress
-  private positionHistory: Position[] = [];
-  private readonly HISTORY_SIZE = 10;
-  private stuckFrameCount = 0;
-  private readonly MAX_STUCK_FRAMES = 15;
 
   // Path-following plan state
   private currentPlan: {
@@ -183,33 +173,7 @@ export class WallBreakerStrategy extends BaseStrategy {
       return true;
     });
 
-    // DEBUG: Show 2 nearest chests
-    const chestsWithDistance = availableChests.map((chest) => ({
-      chest,
-      distance: manhattanDistance(currentPos, chest.position),
-    }));
-    chestsWithDistance.sort((a, b) => a.distance - b.distance);
-
-    console.log(`📦 Total available chests: ${availableChests.length}`);
-    if (chestsWithDistance.length >= 1) {
-      const nearest = chestsWithDistance[0];
-      if (nearest && nearest.chest) {
-        console.log(
-          `   1️⃣ Nearest chest: (${nearest.chest.position.x}, ${nearest.chest.position.y}) - distance: ${nearest.distance}px`
-        );
-      }
-    }
-    if (chestsWithDistance.length >= 2) {
-      const second = chestsWithDistance[1];
-      if (second && second.chest) {
-        console.log(
-          `   2️⃣ 2nd nearest chest: (${second.chest.position.x}, ${second.chest.position.y}) - distance: ${second.distance}px`
-        );
-      }
-    }
-
     if (availableChests.length === 0) {
-      console.log(`❌ No available chests to target`);
       return null;
     }
 
@@ -219,25 +183,16 @@ export class WallBreakerStrategy extends BaseStrategy {
     );
 
     if (!bestPosition) {
-      console.log(`❌ No optimal bomb position found`);
       return null;
     }
 
-    console.log(
-      `🎯 Optimal position: (${bestPosition.position.x}, ${bestPosition.position.y}) with ${bestPosition.chestsCount} chests`
-    );
     // Check if already at target
     const distanceToTarget = manhattanDistance(
       currentPos,
       bestPosition.position
     );
     if (distanceToTarget <= 20) {
-      // Execute immediately
-      console.log(`✅ Already at target! Placing bomb immediately...`);
-
-      // CRITICAL: Check if current position is in danger zone
       if (isPositionInDangerZone(currentPos, gameState)) {
-        console.log(`❌ Cannot place bomb - currently in danger zone!`);
         this.currentPlan = null;
         return null;
       }
@@ -248,7 +203,6 @@ export class WallBreakerStrategy extends BaseStrategy {
       );
 
       if (!canEscape) {
-        console.log(`❌ Cannot escape, aborting`);
         this.currentPlan = null;
         return null;
       }
@@ -283,7 +237,6 @@ export class WallBreakerStrategy extends BaseStrategy {
     );
 
     if (!path || path.length === 0) {
-      console.log(`❌ No path to optimal position`);
       return null;
     }
 
@@ -295,10 +248,6 @@ export class WallBreakerStrategy extends BaseStrategy {
       targetChests: bestPosition.chestsCount,
       plannedAt: Date.now(),
     };
-
-    console.log(
-      `📋 New plan created: ${path.length} steps to bomb ${bestPosition.chestsCount} chests`
-    );
 
     // Start following path
     const movePriority = this.priority + bestPosition.chestsCount * 2;
@@ -527,8 +476,18 @@ export class WallBreakerStrategy extends BaseStrategy {
       if (!path || path.length === 0) continue;
 
       const evaluation = this.evaluateBombPosition(candidatePos, gameState);
-      // evaluateBombPosition returns null if trapped → skip this candidate
       if (!evaluation || evaluation.chestsCount === 0) continue;
+
+      const canEscape = this.canEscapeAfterBombAdvanced(
+        candidatePos,
+        gameState
+      );
+      if (!canEscape) {
+        console.log(
+          `   ⚠️  Candidate (${candidatePos.x}, ${candidatePos.y}) rejected - cannot escape`
+        );
+        continue;
+      }
 
       const adjustedScore = this.computeAdjustedScore(evaluation, distance);
 
@@ -543,43 +502,21 @@ export class WallBreakerStrategy extends BaseStrategy {
       });
     }
 
-    console.log(
-      `📊 Found ${validCandidates.length} valid bomb candidates (passed escape check)`
-    );
-
     if (validCandidates.length === 0) {
-      console.log(
-        `❌ No valid candidates found - all positions either trapped or unsafe`
-      );
       return null;
     }
 
-    // Sort by chestsCount first (descending), then by adjustedScore (descending)
     validCandidates.sort((a, b) => {
       if (a.eval.chestsCount !== b.eval.chestsCount) {
-        return b.eval.chestsCount - a.eval.chestsCount; // More chests = better
+        return b.eval.chestsCount - a.eval.chestsCount;
       }
-      return b.adjustedScore - a.adjustedScore; // Higher score = better
+      return b.adjustedScore - a.adjustedScore;
     });
 
-    // Choose the best candidate
     const bestCandidate = validCandidates[0];
 
-    // Safety: guard against unexpected undefined (shouldn't happen due to earlier checks)
     if (!bestCandidate) {
-      console.log(`❌ Unexpected: no best candidate after sorting, aborting`);
       return null;
-    }
-
-    console.log(
-      `🏆 Best candidate: ${bestCandidate.eval.chestsCount} chests at (${bestCandidate.pos.x}, ${bestCandidate.pos.y})`
-    );
-    if (validCandidates.length > 1) {
-      console.log(
-        `   (rejected ${
-          validCandidates.length - 1
-        } other candidates with fewer chests or lower scores)`
-      );
     }
 
     this.cachedBestPosition = bestCandidate.pos;
@@ -615,9 +552,8 @@ export class WallBreakerStrategy extends BaseStrategy {
     gameState: GameState
   ): Position[] {
     const candidates: Position[] = [];
-    const cellSize = 40; // Kích thước cell tiêu chuẩn
+    const cellSize = 40;
 
-    // Snap center to grid to ensure all candidates are grid-aligned
     const snappedCenter = snapToGrid(center);
 
     // Tạo lưới các vị trí ứng viên
@@ -740,12 +676,8 @@ export class WallBreakerStrategy extends BaseStrategy {
 
       if (closestBomb) {
         const timeLeft = closestBomb.timeRemaining || 5000;
-        console.log(`   💣 Closest bomb: ${timeLeft}ms remaining`);
         if (timeLeft < 2000) {
-          console.log(
-            `   🚨 CRITICAL: Bomb exploding soon, rejecting position!`
-          );
-          return null; // Too dangerous
+          return null;
         }
       }
     }
@@ -845,109 +777,6 @@ export class WallBreakerStrategy extends BaseStrategy {
     // NEW: Bonus for multiple escape routes
     const escapeRoutes = this.countEscapeRoutes(snappedBombPos, gameState);
     safetyScore += escapeRoutes * 5;
-
-    // CRITICAL: Check if position will trap bot after bomb placement
-    // This check applies to ALL positions with chests, not just chest-at-bomb
-    if (chestsCount > 0) {
-      // FIXED: Bot needs to be at least (flameRange + 2) cells away from bomb
-      // Because: flame edge = bomb_center + flameRange*40 + 20
-      //          safe position = flame_edge + player_size (30)
-      //          next cell center must be > safe position
-      const requiredEscapeDistance = flameRange + 2;
-      const dirs = [
-        { dx: 0, dy: -1, name: "UP" },
-        { dx: 0, dy: 1, name: "DOWN" },
-        { dx: -1, dy: 0, name: "LEFT" },
-        { dx: 1, dy: 0, name: "RIGHT" },
-      ];
-
-      let countBlockedDirections = 0;
-
-      console.log(`   🔍 Checking escape routes from bomb position (${snappedBombPos.x}, ${snappedBombPos.y})...`);
-
-      for (const d of dirs) {
-        let canEscapeInDirection = true;
-
-        for (let step = 1; step <= requiredEscapeDistance; step++) {
-          // Calculate CENTER position of the escape cell
-          const checkPosCenter = {
-            x: snappedBombPos.x + d.dx * CELL_SIZE * step,
-            y: snappedBombPos.y + d.dy * CELL_SIZE * step,
-          };
-
-          // Convert to TOP-LEFT corner for canMoveTo (expects top-left of 30x30 player box)
-          const checkPosTopLeft = {
-            x: checkPosCenter.x - 15,  // Center to top-left (PLAYER_SIZE=30, so offset = 15)
-            y: checkPosCenter.y - 15,
-          };
-
-          console.log(`      Step ${step} ${d.name}: center=(${checkPosCenter.x},${checkPosCenter.y}), topLeft=(${checkPosTopLeft.x},${checkPosTopLeft.y})`);
-
-          // Bounds check: ensure top-left corner of player box is within map bounds
-          // Player box is 30x30, so top-left must be at least 0 and at most (width-30, height-30)
-          const outOfBounds =
-            checkPosTopLeft.x < 0 ||
-            checkPosTopLeft.y < 0 ||
-            checkPosTopLeft.x + 30 > gameState.map.width ||
-            checkPosTopLeft.y + 30 > gameState.map.height;
-
-          if (outOfBounds) {
-            console.log(`         ❌ Out of bounds (map: ${gameState.map.width}x${gameState.map.height})`);
-            canEscapeInDirection = false;
-            break;
-          }
-
-          // Check obstacles at CENTER position
-          const occupiedByWall = (gameState.map.walls || []).some(
-            (w) =>
-              Math.abs(w.position.x - checkPosCenter.x) < 20 &&
-              Math.abs(w.position.y - checkPosCenter.y) < 20
-          );
-          const occupiedByChest = (gameState.map.chests || []).some(
-            (c) =>
-              Math.abs(c.position.x - checkPosCenter.x) < 20 &&
-              Math.abs(c.position.y - checkPosCenter.y) < 20
-          );
-
-          // Use canMoveTo with TOP-LEFT position
-          const canMoveToPos = canMoveTo(checkPosTopLeft, gameState);
-
-          const canStep = !occupiedByWall && !occupiedByChest && canMoveToPos;
-
-          if (!canStep) {
-            if (occupiedByWall) console.log(`         ❌ Blocked by wall`);
-            if (occupiedByChest) console.log(`         ❌ Blocked by chest`);
-            if (!canMoveToPos) console.log(`         ❌ canMoveTo failed`);
-            canEscapeInDirection = false;
-            break;
-          }
-
-          console.log(`         ✅ Can move`);
-        }
-
-        if (!canEscapeInDirection) {
-          console.log(`   ❌ Direction ${d.name}: BLOCKED`);
-          countBlockedDirections++;
-        } else {
-          console.log(`   ✅ Direction ${d.name}: OPEN (${requiredEscapeDistance} cells clear)`);
-        }
-      }
-
-      // CRITICAL: Reject position if all 4 directions blocked
-      if (countBlockedDirections >= 4) {
-        console.log(
-          `❌ Position (${position.x}, ${position.y}) REJECTED: all 4 directions blocked within ${requiredEscapeDistance} cells (TRAPPED!)`
-        );
-        console.log(
-          `   Would have hit ${chestsCount} chests but cannot escape - ABORTING`
-        );
-        return null;
-      }
-
-      console.log(
-        `   ✅ Escape check: ${4 - countBlockedDirections}/4 directions open`
-      );
-    }
 
     // Combined score with safety weighting
     const finalScore = totalScore + safetyScore;

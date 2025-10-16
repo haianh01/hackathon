@@ -1,29 +1,10 @@
-import { GameState, Position, Direction, Wall, Bomb } from "../types";
+import { GameState, Position, Direction, Bomb } from "../types";
 import {
   getPositionInDirection,
   positionsEqual,
   getPositionsInLine,
 } from "./position";
-import {
-  isWithinBounds,
-  isBlocked,
-  canMoveTo as canMoveToUnified,
-  PLAYER_SIZE,
-} from "./constants";
-
-/**
- * @deprecated Use constants.isBlocked instead
- * Kiểm tra xem vị trí có bị tường chặn không
- */
-export function isPositionBlocked(
-  position: Position,
-  gameState: GameState
-): boolean {
-  console.log(
-    `⚠️ Using deprecated isPositionBlocked, switch to constants.isBlocked`
-  );
-  return isBlocked(position, gameState, PLAYER_SIZE);
-}
+import { isWithinBounds, isBlocked, isPositionBlocked } from "./constants";
 
 /**
  * Kiểm tra xem vị trí có an toàn (không bị bom nổ) không
@@ -61,39 +42,18 @@ export function isPositionInBombRange(
 ): boolean {
   const CELL_SIZE = 40; // Flame cell size
   const PLAYER_SIZE = 30; // Bot hitbox size
-  const SAFETY_MARGIN = 5; // pixels buffer
 
-  // OPTIMIZATION: Check center-to-center distance first for quick reject
   const centerDistance = Math.hypot(
     position.x - bomb.position.x,
     position.y - bomb.position.y
   );
-  console.log(
-    "%c🤪 ~ file: gameLogic.ts:67 [] -> centerDistance : ",
-    "color: #a960ab",
-    position,
-    bomb
-  );
 
-  // If bot center is far enough from bomb center, definitely safe
-  // FIXED: Simplified formula - just use flame range in pixels
-  // Formula: (flameRange * CELL_SIZE) + bot half size for safety
-  // This is more accurate - bot only needs to be outside flame cells
-  const safeDistance = bomb.flameRange * CELL_SIZE + PLAYER_SIZE / 2;
-  console.log(
-    "%c🤪 ~ file: gameLogic.ts:78 [] -> safeDistance : ",
-    "color: #247c34",
-    safeDistance,
-    `flameRange=${bomb.flameRange}`
-  );
+  const safeDistance = bomb.flameRange * CELL_SIZE + PLAYER_SIZE;
 
   if (centerDistance > safeDistance) {
-    console.log("✅ Quick check: Bot is definitely safe (far from bomb)");
     return false; // Definitely safe - no need for detailed AABB checks
   }
 
-  // DETAILED CHECK: If close, use AABB collision for precise detection
-  // Kiểm tra collision với bomb center (bomb occupies full cell)
   if (checkBoxCollision(position, PLAYER_SIZE, bomb.position, CELL_SIZE)) {
     return true;
   }
@@ -157,16 +117,6 @@ export function getSafeAdjacentPositions(
   }
 
   return safePositions;
-}
-
-/**
- * @deprecated Use constants.canMoveTo instead
- * Kiểm tra xem có thể di chuyển đến vị trí không
- * Uses pixel coordinates for precise bounds checking
- */
-export function canMoveTo(position: Position, gameState: GameState): boolean {
-  console.log(`⚠️ Using deprecated canMoveTo, switch to constants.canMoveTo`);
-  return canMoveToUnified(position, gameState, PLAYER_SIZE);
 }
 
 /**
