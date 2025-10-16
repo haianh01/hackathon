@@ -76,10 +76,10 @@ export function isPositionInBombRange(
   );
 
   // If bot center is far enough from bomb center, definitely safe
-  // Formula: (flameRange * CELL_SIZE) + CELL_SIZE/2 (bomb half) + PLAYER_SIZE/2 (bot half) + SAFETY_MARGIN
-  // This accounts for: bomb center -> edge of furthest flame cell + bot radius + margin
-  const safeDistance =
-    bomb.flameRange * CELL_SIZE + CELL_SIZE / 2 + PLAYER_SIZE / 2 + SAFETY_MARGIN;
+  // FIXED: Simplified formula - just use flame range in pixels
+  // Formula: (flameRange * CELL_SIZE) + bot half size for safety
+  // This is more accurate - bot only needs to be outside flame cells
+  const safeDistance = bomb.flameRange * CELL_SIZE + PLAYER_SIZE / 2;
   console.log(
     "%c🤪 ~ file: gameLogic.ts:78 [] -> safeDistance : ",
     "color: #247c34",

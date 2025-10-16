@@ -169,13 +169,27 @@ export function canMoveTo(
   gameState: any,
   objectSize: number = PLAYER_SIZE
 ): boolean {
-  // 1. Check bounds with safety margin
-  if (!isWithinBounds(position, gameState.map.width, gameState.map.height, 0)) {
+  // 1. Check bounds with object size consideration
+  // FIXED: Account for object size - position is top-left corner
+  if (
+    position.x < 0 ||
+    position.x + objectSize > gameState.map.width ||
+    position.y < 0 ||
+    position.y + objectSize > gameState.map.height
+  ) {
+    console.log(
+      "%c🤪 ~ file: c:Userslehaihackathonsrcutilsconstants.ts:150 [] -> canMoveTo : ",
+      "color: #571cce",
+      false
+    );
     return false;
   }
 
   // 2. Check walls and chests using unified collision
   if (isBlocked(position, gameState, objectSize)) {
+    console.log(
+      `❌ canMoveTo BLOCKED at (${position.x}, ${position.y}) - collision with walls/chests`
+    );
     return false;
   }
 

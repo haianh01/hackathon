@@ -110,6 +110,25 @@ export class BomberManBot {
       // This ensures AI has correct bomb information when calculating escape routes
       this.gameEngine.addBombRealtime(data);
 
+      // Check if this is NOT our predicted bomb (avoid duplicate escape triggers)
+      const currentBot = this.gameEngine.getCurrentBot();
+      if (currentBot) {
+        const distance = Math.hypot(
+          currentBot.position.x - data.x,
+          currentBot.position.y - data.y
+        );
+
+        // If we just placed a bomb (distance < 5px) and already have emergency escape path,
+        // skip this handler to avoid duplicate escape triggers
+        if (distance < 5 && this.emergencyEscapePath) {
+          console.log(
+            `⏩ Skipping socket bomb handler - already have emergency escape from client-side prediction`
+          );
+          return;
+        }
+      }
+
+      // Handle bombs from other players or if client-side prediction failed
       this.handleImmediateBombThreat(data);
     });
 
@@ -310,13 +329,28 @@ export class BomberManBot {
         this.socketConnection.stopContinuousMove();
         this.socketConnection.placeBomb();
         const currentBot = this.gameEngine.getCurrentBot();
-        console.log(
-          "%c🤪 ~ file: bombermanBot.ts:312 [] -> currentBot123 : ",
-          "color: #1f0854",
-          currentBot
-        );
+
         if (currentBot) {
           this.ai.markBombPlaced(currentBot.position);
+
+          // CLIENT-SIDE BOMB PREDICTION (Option B):
+          // Trigger immediate escape WITHOUT waiting for server socket event
+          const predictedBomb = {
+            x: currentBot.position.x,
+            y: currentBot.position.y,
+            range: currentBot.flameRange || 2,
+            id: `predicted-${Date.now()}`,
+          };
+
+          console.log(
+            `💣 CLIENT-SIDE PREDICTION: Bomb placed at (${predictedBomb.x}, ${predictedBomb.y}), triggering immediate escape`
+          );
+
+          // Add predicted bomb to game state
+          this.gameEngine.addBombRealtime(predictedBomb);
+
+          // Trigger immediate escape WITHOUT waiting for socket event
+          this.handleImmediateBombThreat(predictedBomb);
         }
         break;
       case BotAction.STOP:

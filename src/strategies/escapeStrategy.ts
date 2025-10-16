@@ -14,10 +14,13 @@ import { Pathfinding } from "../utils/pathfinding";
 import {
   getPositionInDirection,
   getDirectionToTarget,
-  // Use unified collision system
-  canMoveTo,
   EDGE_SAFETY_MARGIN,
 } from "../utils";
+import {
+  // Use UNIFIED collision system from constants
+  canMoveTo,
+  PLAYER_SIZE,
+} from "../utils/constants";
 /**
  * Escape strategy for when the bot is in a danger zone.
  */
@@ -42,7 +45,10 @@ export class EscapeStrategy extends BaseStrategy {
     const bestSafeResult = this.findBestSafePosition(gameState);
 
     if (bestSafeResult) {
-      const direction = getDirectionToTarget(currentPos, bestSafeResult.position);
+      const direction = getDirectionToTarget(
+        currentPos,
+        bestSafeResult.position
+      );
 
       // If we have a full path (from distant pathfinding), use it
       if (bestSafeResult.path && bestSafeResult.target) {
@@ -147,41 +153,81 @@ export class EscapeStrategy extends BaseStrategy {
     target: Position;
   } | null {
     const currentPos = gameState.currentBot.position;
-    const SEARCH_RADIUS = 200; // pixels - reasonable search area
-    const CELL_SIZE = 40; // Convert to cells for pathfinding
+    const CELL_SIZE = 40;
+
+    // FIXED: Calculate search radius based on flame range to ensure enough safe area
+    const flameRange = gameState.currentBot.flameRange || 2;
+    const dangerRadius = (flameRange + 1) * CELL_SIZE; // Danger zone size
+    const SEARCH_RADIUS = Math.max(280, dangerRadius + 120); // At least 7 cells or danger + 3 cells buffer
 
     console.log(
-      `🔍 Searching for distant safe zones within ${SEARCH_RADIUS}px radius...`
+      `🔍 Searching for distant safe zones within ${SEARCH_RADIUS}px radius (flameRange: ${flameRange})...`
+    );
+
+    // FIXED: Snap bot position to grid to ensure proper alignment
+    const snappedX = Math.round(currentPos.x / CELL_SIZE) * CELL_SIZE;
+    const snappedY = Math.round(currentPos.y / CELL_SIZE) * CELL_SIZE;
+
+    console.log(
+      `📍 Bot position: (${currentPos.x}, ${currentPos.y}) → Snapped: (${snappedX}, ${snappedY})`
     );
 
     // Find all safe positions within search radius
     const safeCandidates: Position[] = [];
+    let totalChecked = 0;
+    let rejectedByDanger = 0;
+    let rejectedByMove = 0;
 
-    for (
-      let x = Math.max(EDGE_SAFETY_MARGIN, currentPos.x - SEARCH_RADIUS);
-      x < Math.min(gameState.map.width - EDGE_SAFETY_MARGIN, currentPos.x + SEARCH_RADIUS);
-      x += CELL_SIZE
-    ) {
-      for (
-        let y = Math.max(EDGE_SAFETY_MARGIN, currentPos.y - SEARCH_RADIUS);
-        y < Math.min(gameState.map.height - EDGE_SAFETY_MARGIN, currentPos.y + SEARCH_RADIUS);
-        y += CELL_SIZE
-      ) {
+    // FIXED: Start from grid-aligned position and iterate by CELL_SIZE
+    const startX = Math.max(
+      EDGE_SAFETY_MARGIN,
+      Math.floor((snappedX - SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+    );
+    const endX = Math.min(
+      gameState.map.width - EDGE_SAFETY_MARGIN,
+      Math.ceil((snappedX + SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+    );
+    const startY = Math.max(
+      EDGE_SAFETY_MARGIN,
+      Math.floor((snappedY - SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+    );
+    const endY = Math.min(
+      gameState.map.height - EDGE_SAFETY_MARGIN,
+      Math.ceil((snappedY + SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+    );
+
+    for (let x = startX; x <= endX; x += CELL_SIZE) {
+      for (let y = startY; y <= endY; y += CELL_SIZE) {
         const candidate = { x, y };
+        totalChecked++;
 
         // Check if position is safe and reachable
-        if (
-          !isPositionInDangerZone(candidate, gameState) &&
-          canMoveTo(candidate, gameState)
-        ) {
+        const inDanger = isPositionInDangerZone(candidate, gameState);
+        const canMove = canMoveTo(candidate, gameState);
+
+        if (inDanger) {
+          rejectedByDanger++;
+        }
+        if (!canMove) {
+          rejectedByMove++;
+        }
+
+        if (!inDanger && canMove) {
           safeCandidates.push(candidate);
         }
       }
     }
 
-    console.log(`🎯 Found ${safeCandidates.length} distant safe candidates`);
+    console.log(`📊 Search statistics:`);
+    console.log(`   Total cells checked: ${totalChecked}`);
+    console.log(`   Rejected by danger zone: ${rejectedByDanger}`);
+    console.log(`   Rejected by canMoveTo: ${rejectedByMove}`);
+    console.log(`   ✅ Valid safe candidates: ${safeCandidates.length}`);
 
     if (safeCandidates.length === 0) {
+      console.log(`❌ No safe candidates found in search area!`);
+      console.log(`   Search bounds: (${startX},${startY}) to (${endX},${endY})`);
+      console.log(`   Map size: ${gameState.map.width}x${gameState.map.height}`);
       return null;
     }
 
@@ -373,7 +419,10 @@ export class EscapeStrategy extends BaseStrategy {
       return this.handleCompletePlayerBlockage(gameState);
     }
 
-    const distantResult = this.findDistantSafePosition(gameState, ownBombPosition);
+    const distantResult = this.findDistantSafePosition(
+      gameState,
+      ownBombPosition
+    );
 
     if (distantResult) {
       const direction = getDirectionToTarget(
