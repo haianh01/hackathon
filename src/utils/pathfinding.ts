@@ -15,6 +15,7 @@ import {
   CELL_SIZE,
   MOVE_STEP_SIZE,
   MOVE_INTERVAL_MS,
+  cellToPixelCenter,
 } from "./constants";
 
 /**
@@ -670,3 +671,189 @@ export function canEscapeFromBomb(
   console.log(`   ❌ NO ESCAPE FOUND after ${visits} visits`);
   return false;
 }
+// Định nghĩa kiểu trả về mới
+type EscapePathResult = {
+  nextStep: Position; // Vị trí pixel của bước đi đầu tiên
+  targetCell: Position; // Vị trí cell index của đích an toàn
+  fullSteps: number; // Tổng số bước (cells) đến đích
+} | null;
+
+/**
+ * Sử dụng BFS để tìm đường đi ngắn nhất (bằng số bước) từ startPos
+ * đến một ô an toàn mà có thể đến được trước khi bom nổ.
+ * * @param startPos Vị trí pixel bắt đầu của bot.
+ * @param bomb Thông tin về quả bom.
+ * @param gameState Trạng thái hiện tại của trò chơi.
+ * @returns {nextStep, targetCell, fullSteps} hoặc null nếu không thể thoát.
+ */
+export function findEscapePath(
+  startPos: Position,
+  bomb: Bomb,
+  gameState: GameState,
+  cellSize = CELL_SIZE,
+  moveIntervalMs = MOVE_INTERVAL_MS
+): EscapePathResult {
+  const startCellIndex = pixelToCellIndex(startPos);
+  const unsafe = computeExplosionCells(bomb, gameState, cellSize);
+  const startKey = createCellIndexKey(startCellIndex);
+
+  // Khởi tạo hàng đợi và Map truy vết (parentMap)
+  // parentMap: 'key_cua_con' -> 'key_cua_cha'
+  const queue: { cellIndex: Position; steps: number }[] = [
+    { cellIndex: startCellIndex, steps: 0 },
+  ];
+  const parentMap = new Map<string, string>(); // Key -> Parent Key
+  const visited = new Set<string>([startKey]);
+
+  // Tính toán tham số di chuyển
+  const botSpeed = gameState.currentBot.speed || 1;
+  const pixelsPerMove = botSpeed * MOVE_STEP_SIZE;
+  const timeRemaining = bomb.timeRemaining || 5000;
+  const pixelsPerSecond = (1000 / moveIntervalMs) * pixelsPerMove;
+
+  // ... (Phần logic kiểm tra an toàn tại chỗ có thể giữ lại hoặc đơn giản hóa) ...
+  // Giả định nếu bot đang đứng trên ô an toàn (không bị ảnh hưởng), nó đã thoát.
+
+  // Giới hạn vòng lặp
+  const mapCellDims = getMapCellDimensions(
+    gameState.map.width,
+    gameState.map.height
+  );
+  const maxVisits = mapCellDims.width * mapCellDims.height * 2;
+  let visits = 0;
+  const directions = [
+    { x: 0, y: -1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+    { x: 1, y: 0 }, // 4 hướng
+  ];
+
+  while (queue.length > 0) {
+    const node = queue.shift()!;
+    visits++;
+
+    if (visits > maxVisits) return null; // Vượt quá giới hạn
+
+    for (const dir of directions) {
+      const nextCellIndex = {
+        x: node.cellIndex.x + dir.x,
+        y: node.cellIndex.y + dir.y,
+      };
+      const key = createCellIndexKey(nextCellIndex);
+
+      if (visited.has(key)) continue;
+
+      // 1. Kiểm tra giới hạn (Bounds Check)
+      if (
+        !isWithinCellBounds(
+          nextCellIndex,
+          gameState.map.width,
+          gameState.map.height
+        )
+      ) {
+        continue;
+      }
+
+      // 2. Kiểm tra vật cản (Blocking Check)
+      const pixelPos = cellToPixelCorner(nextCellIndex);
+      if (isBlocked(pixelPos, gameState, WALL_SIZE)) {
+        continue;
+      }
+
+      const nextSteps = node.steps + 1;
+      const distancePx = nextSteps * cellSize;
+      const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
+
+      // 3. Kiểm tra Thời gian và Nguy hiểm (Time & Danger Check)
+      if (unsafe.has(key)) {
+        // Nếu ô nguy hiểm, phải đi qua (và thoát ra) trước khi bom nổ
+        if (arrivalTimeMs >= timeRemaining) {
+          continue; // Không thể đi qua kịp thời
+        }
+      }
+
+      // Đã vượt qua mọi kiểm tra. Lưu lại cha và thêm vào hàng đợi.
+      visited.add(key);
+      parentMap.set(key, createCellIndexKey(node.cellIndex));
+
+      // 4. KIỂM TRA ĐÍCH AN TOÀN (Escape Target Check)
+      if (!unsafe.has(key)) {
+        // 🎯 Đã tìm thấy ô AN TOÀN đầu tiên
+
+        if (arrivalTimeMs <= timeRemaining) {
+          // Có thể đến đích an toàn kịp thời
+
+          // Truy vết để tìm bước đi đầu tiên
+          const nextStepCellIndex = reconstructFirstStep(
+            parentMap,
+            startCellIndex,
+            nextCellIndex
+          );
+          const nextStepPixelPos = cellToPixelCenter(nextStepCellIndex);
+
+          return {
+            nextStep: nextStepPixelPos,
+            targetCell: nextCellIndex,
+            fullSteps: nextSteps,
+          };
+        }
+        // Nếu an toàn nhưng không đến kịp, vẫn tiếp tục tìm kiếm (vì đây là BFS, không cần thêm vào queue nữa)
+      }
+
+      // Thêm vào hàng đợi để tìm kiếm các ô xa hơn
+      queue.push({ cellIndex: nextCellIndex, steps: nextSteps });
+    }
+  }
+
+  return null; // Không tìm thấy đường thoát
+}
+
+// ----------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Hàm hỗ trợ: Truy vết ngược từ đích đến START để tìm BƯỚC ĐI ĐẦU TIÊN (index 1).
+ * @param parentMap Map chứa quan hệ con -> cha.
+ * @param startCellIndex Vị trí cell index bắt đầu.
+ * @param endCellIndex Vị trí cell index đích.
+ * @returns Vị trí cell index của bước đi đầu tiên sau startCellIndex.
+ */
+function reconstructFirstStep(
+  parentMap: Map<string, string>,
+  startCellIndex: Position,
+  endCellIndex: Position
+): Position {
+  const startKey = createCellIndexKey(startCellIndex);
+  let currentKey = createCellIndexKey(endCellIndex);
+  let pathKeys: string[] = [];
+
+  // 1. Dựng lại đường đi từ Đích về Gốc
+  while (currentKey !== startKey) {
+    pathKeys.unshift(currentKey);
+    const parentKey = parentMap.get(currentKey);
+    if (!parentKey) break; // Lỗi, không tìm thấy cha
+    currentKey = parentKey;
+  }
+
+  // 2. Bước đi đầu tiên là phần tử đầu tiên của đường đi (index 0 của pathKeys)
+  const firstStepKey = pathKeys[0];
+
+  // Nếu không tìm được bước đi đầu tiên, trả về vị trí bắt đầu làm fallback
+  if (!firstStepKey) {
+    return startCellIndex;
+  }
+
+  // Chuyển key trở lại Position với kiểm tra an toàn
+  const parts = firstStepKey.split(",");
+  const px = Number(parts[0]);
+  const py = Number(parts[1]);
+
+  // Nếu giá trị không hợp lệ (undefined -> NaN / not finite), trả về fallback
+  if (!Number.isFinite(px) || !Number.isFinite(py)) {
+    return startCellIndex;
+  }
+
+  return { x: px, y: py };
+}
+
+// Giả định các hàm phụ trợ (pixelToCellIndex, cellToPixelCenter, isBlocked, computeExplosionCells, v.v.)
+// đã được định nghĩa và có sẵn trong phạm vi mã của bạn.

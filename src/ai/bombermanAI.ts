@@ -146,7 +146,7 @@ export class BombermanAI {
     //   console.log(`💡 Recommendations:`);
     //   analysis.recommendations.forEach((rec) => console.log(`   ${rec}`));
     // }
-    console.log(`🎮 === GAME PHASE ANALYSIS END ===\n`);
+    // console.log(`🎮 === GAME PHASE ANALYSIS END ===\n`);
 
     const decisions: BotDecision[] = this.strategies
       .map((strategy) => {
@@ -214,9 +214,9 @@ export class BombermanAI {
     console.log(`🧠 === AI DECISION MAKING END ===\n`);
 
     console.log(
-      `🤖 Bot decided: ${
-        bestDecision.reason
-      } (Priority: ${bestDecision.priority.toFixed(1)})`
+      `🤖 Bot decided: ${bestDecision.reason} (Priority: ${JSON.stringify(
+        bestDecision
+      )})`
     );
 
     return bestDecision;

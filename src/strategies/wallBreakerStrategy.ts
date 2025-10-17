@@ -45,7 +45,6 @@ export class WallBreakerStrategy extends BaseStrategy {
   > = new Map();
 
   private destroyedChests: Set<string> = new Set(); // Track destroyed chests
-
   // Path-following plan state
   private currentPlan: {
     phase: "MOVING_TO_TARGET";
@@ -61,77 +60,73 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     this.updateBombTracking(gameState);
 
-    if (gameState.currentBot.bombCount <= 0) {
-      this.currentPlan = null; // Clear plan if no bombs
-      return null;
-    }
+    // if (gameState.currentBot.bombCount <= 0) {
+    //   this.currentPlan = null; // Clear plan if no bombs
+    //   return null;
+    // }
 
     // PRIORITY 1: Check if we have an active plan and should continue following it
-    if (this.currentPlan && !this.shouldReplan(gameState)) {
-      console.log(`📋 Continuing existing bomb placement plan...`);
+    console.log(`📋 Continuing existing bomb placement plan...`);
+    const externalPlan = (gameState as any).bombermanCurrentPlan;
+    if (externalPlan) {
+      this.currentPlan = externalPlan;
+    }
+    const distanceToTarget = manhattanDistance(
+      currentPos,
+      this.currentPlan.bombPosition
+    );
 
-      const distanceToTarget = manhattanDistance(
-        currentPos,
-        this.currentPlan.bombPosition
+    // Check if reached target → BOMB
+    if (distanceToTarget <= 20) {
+      console.log(`✅ Reached bomb placement target! Placing bomb...`);
+
+      // CRITICAL: Check if bomb already exists at this position
+      const snappedBombPos = snapToGrid(this.currentPlan.bombPosition);
+      const existingBomb = gameState.map.bombs.find((bomb) => {
+        const snappedExistingPos = snapToGrid(bomb.position);
+        const distance = manhattanDistance(snappedExistingPos, snappedBombPos);
+        return distance < 20;
+      });
+
+      if (existingBomb) {
+        console.log(`❌ Bomb already exists at target, clearing plan`);
+        this.currentPlan = null;
+        return null;
+      }
+
+      // Final escape check
+      const canEscape = this.canEscapeAfterBombAdvanced(
+        this.currentPlan.bombPosition,
+        gameState
       );
 
-      // Check if reached target → BOMB
-      if (distanceToTarget <= 20) {
-        console.log(`✅ Reached bomb placement target! Placing bomb...`);
-
-        // CRITICAL: Check if bomb already exists at this position
-        const snappedBombPos = snapToGrid(this.currentPlan.bombPosition);
-        const existingBomb = gameState.map.bombs.find((bomb) => {
-          const snappedExistingPos = snapToGrid(bomb.position);
-          const distance = manhattanDistance(
-            snappedExistingPos,
-            snappedBombPos
-          );
-          return distance < 20;
-        });
-
-        if (existingBomb) {
-          console.log(`❌ Bomb already exists at target, clearing plan`);
-          this.currentPlan = null;
-          return null;
-        }
-
-        // Final escape check
-        const canEscape = this.canEscapeAfterBombAdvanced(
-          this.currentPlan.bombPosition,
-          gameState
-        );
-
-        if (!canEscape) {
-          console.log(
-            `❌ Cannot escape from planned bomb position, replanning`
-          );
-          this.currentPlan = null;
-          return null;
-        }
-
-        // Execute bomb placement
-        const targetChests = this.getTargetChests(
-          this.currentPlan.bombPosition,
-          gameState
-        );
-        this.trackBombPlacement(this.currentPlan.bombPosition, targetChests);
-
-        const finalPriority = this.priority + this.currentPlan.targetChests * 5;
-        const targetChestsCount = this.currentPlan.targetChests;
-
-        // Clear plan after execution
+      if (!canEscape) {
+        console.log(`❌ Cannot escape from planned bomb position, replanning`);
         this.currentPlan = null;
-
-        console.log(
-          `🧱 === WallBreakerStrategy EVALUATION END (PLAN BOMB) ===\n`
-        );
-        return this.createDecision(
-          BotAction.BOMB,
-          finalPriority,
-          `Executing planned bomb (${targetChestsCount} chests)`
-        );
+        return null;
       }
+
+      // Execute bomb placement
+      const targetChests = this.getTargetChests(
+        this.currentPlan.bombPosition,
+        gameState
+      );
+      this.trackBombPlacement(this.currentPlan.bombPosition, targetChests);
+
+      const finalPriority = this.priority + this.currentPlan.targetChests * 5;
+      const targetChestsCount = this.currentPlan.targetChests;
+
+      // Clear plan after execution
+      this.currentPlan = null;
+
+      console.log(
+        `🧱 === WallBreakerStrategy EVALUATION END (PLAN BOMB) ===\n`
+      );
+      return this.createDecision(
+        BotAction.BOMB,
+        finalPriority,
+        `Executing planned bomb (${targetChestsCount} chests)`
+      );
 
       // Continue following path
       const movePriority =
@@ -180,6 +175,11 @@ export class WallBreakerStrategy extends BaseStrategy {
     const bestPosition = this.findOptimalBombPosition(
       gameState,
       availableChests
+    );
+    console.log(
+      "%c🤪 ~ file: wallBreakerStrategy.ts:180 [] -> bestPosition : ",
+      "color: #cf7f8f",
+      bestPosition
     );
 
     if (!bestPosition) {

@@ -4,10 +4,7 @@ import {
   manhattanDistance,
   isPositionSafe,
   getPositionInDirection,
-  // Use unified collision system
   canMoveTo,
-  isBlocked,
-  PLAYER_SIZE,
 } from "../utils";
 
 /**

@@ -205,3 +205,27 @@ export function isPositionBlocked(
 ): boolean {
   return isBlocked(position, gameState, PLAYER_SIZE);
 }
+
+/**
+ * Chuyển đổi tọa độ chỉ mục ô lưới (cell index) sang tọa độ pixel
+ * của TRUNG TÂM ô đó.
+ * @param cellIndex Tọa độ chỉ mục ô lưới (ví dụ: {x: 1, y: 2}).
+ * @param cellSize Kích thước mỗi ô (ví dụ: 40).
+ * @returns Vị trí pixel trung tâm của ô.
+ */
+export function cellToPixelCenter(
+  cellIndex: Position,
+  cellSize: number = CELL_SIZE
+): Position {
+  // 1. Tính tọa độ góc (trên cùng bên trái)
+  const cornerX = cellIndex.x * cellSize;
+  const cornerY = cellIndex.y * cellSize;
+
+  // 2. Cộng thêm nửa kích thước ô để lấy trung tâm
+  const centerOffset = cellSize / 2;
+
+  return {
+    x: cornerX + centerOffset,
+    y: cornerY + centerOffset,
+  };
+}
