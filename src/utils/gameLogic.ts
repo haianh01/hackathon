@@ -1,10 +1,18 @@
-import { GameState, Position, Direction, Bomb } from "../types";
+import { GameState, Position, Bomb, Direction } from "../types";
 import {
   getPositionInDirection,
-  positionsEqual,
   getPositionsInLine,
+  manhattanDistance,
+  positionsEqual,
 } from "./position";
-import { isWithinBounds, isBlocked, isPositionBlocked } from "./constants";
+import { computeExplosionCells } from "./pathfinding";
+import { pixelToCellIndex, createCellIndexKey } from "./coordinates";
+import {
+  CELL_SIZE,
+  isBlocked,
+  isPositionBlocked,
+  isWithinBounds,
+} from "./constants";
 
 /**
  * Kiểm tra xem vị trí có an toàn (không bị bom nổ) không
@@ -23,8 +31,12 @@ export function isPositionInDangerZone(
   position: Position,
   gameState: GameState
 ): boolean {
+  const cellIndex = pixelToCellIndex(position);
+  const cellKey = createCellIndexKey(cellIndex);
+
   for (const bomb of gameState.map.bombs) {
-    if (isPositionInBombRange(position, bomb, gameState)) {
+    const unsafeCells = computeExplosionCells(bomb, gameState);
+    if (unsafeCells.has(cellKey)) {
       return true;
     }
   }
@@ -97,6 +109,22 @@ export function getSafeAdjacentPositions(
   position: Position,
   gameState: GameState
 ): Position[] {
+  const adjacentPositions = [
+    { x: position.x, y: position.y - CELL_SIZE }, // UP
+    { x: position.x, y: position.y + CELL_SIZE }, // DOWN
+    { x: position.x - CELL_SIZE, y: position.y }, // LEFT
+    { x: position.x + CELL_SIZE, y: position.y }, // RIGHT
+  ];
+
+  return adjacentPositions.filter(
+    (pos) => !isPositionInDangerZone(pos, gameState)
+  );
+}
+
+export function getSafeAdjacentPositionFirst(
+  position: Position,
+  gameState: GameState
+): Position[] {
   const directions = [
     Direction.UP,
     Direction.DOWN,
@@ -119,8 +147,7 @@ export function getSafeAdjacentPositions(
   return safePositions;
 }
 
-/**
- * Tính điểm số của việc đặt bom tại vị trí
+/**  * Tính điểm số của việc đặt bom tại vị trí
  * Sử dụng AABB collision để detect chính xác enemies/items trong flame
  */
 export function calculateBombScore(
@@ -184,6 +211,7 @@ export function calculateBombScore(
  * Kiểm tra xem vị trí có va chạm với tường hoặc rương không
  * Dùng cho pixel-level collision detection
  */
+
 export function isPositionCollidingWithWalls(
   position: Position,
   gameState: GameState,
@@ -197,6 +225,51 @@ export function isPositionCollidingWithWalls(
   }
   for (const chest of gameState.map.chests || []) {
     if (checkBoxCollision(position, botSize, chest.position, 40)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Kiểm tra xem có kẻ thù nào ở gần một vị trí nhất định không.
+ * @param botPosition Vị trí của bot.
+ * @param gameState Trạng thái game.
+Sử dụng khoảng cách Manhattan để tính toán hiệu quả.
+ * @param radius Bán kính tìm kiếm (pixel).
+ * @returns True nếu có kẻ thù ở gần.
+ */
+export function isEnemyNearby(
+  botPosition: Position,
+  gameState: GameState,
+  radius: number
+): boolean {
+  for (const enemy of gameState.enemies) {
+    if (enemy.isAlive) {
+      const distance = manhattanDistance(botPosition, enemy.position);
+      if (distance <= radius) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Kiểm tra xem có vật phẩm nào ở gần một vị trí nhất định không.
+ * @param botPosition Vị trí của bot.
+ * @param gameState Trạng thái game.
+ * @param radius Bán kính tìm kiếm (pixel).
+ * @returns True nếu có vật phẩm ở gần.
+ */
+export function isItemNearby(
+  botPosition: Position,
+  gameState: GameState,
+  radius: number
+): boolean {
+  for (const item of gameState.map.items) {
+    const distance = manhattanDistance(botPosition, item.position);
+    if (distance <= radius) {
       return true;
     }
   }

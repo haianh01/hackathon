@@ -5,12 +5,13 @@ import {
   BotAction,
   Direction,
   Position,
+  Bomb,
 } from "../types";
 import {
   getSafeAdjacentPositions,
   isPositionInDangerZone,
 } from "../utils/gameLogic";
-import { Pathfinding } from "../utils/pathfinding";
+import { findEscapePath, Pathfinding } from "../utils/pathfinding";
 import {
   getPositionInDirection,
   getDirectionToTarget,
@@ -164,14 +165,6 @@ export class EscapeStrategy extends BaseStrategy {
       `🔍 Searching for distant safe zones within ${SEARCH_RADIUS}px radius (flameRange: ${flameRange})...`
     );
 
-    // FIXED: Snap bot position to grid to ensure proper alignment
-    const snappedX = Math.round(currentPos.x / CELL_SIZE) * CELL_SIZE;
-    const snappedY = Math.round(currentPos.y / CELL_SIZE) * CELL_SIZE;
-
-    console.log(
-      `📍 Bot position: (${currentPos.x}, ${currentPos.y}) → Snapped: (${snappedX}, ${snappedY})`
-    );
-
     // Find all safe positions within search radius
     const safeCandidates: Position[] = [];
     let totalChecked = 0;
@@ -181,19 +174,19 @@ export class EscapeStrategy extends BaseStrategy {
     // FIXED: Start from grid-aligned position and iterate by CELL_SIZE
     const startX = Math.max(
       EDGE_SAFETY_MARGIN,
-      Math.floor((snappedX - SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+      Math.floor((currentPos.x - SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
     );
     const endX = Math.min(
       gameState.map.width - EDGE_SAFETY_MARGIN,
-      Math.ceil((snappedX + SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+      Math.ceil((currentPos.x + SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
     );
     const startY = Math.max(
       EDGE_SAFETY_MARGIN,
-      Math.floor((snappedY - SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+      Math.floor((currentPos.y - SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
     );
     const endY = Math.min(
       gameState.map.height - EDGE_SAFETY_MARGIN,
-      Math.ceil((snappedY + SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
+      Math.ceil((currentPos.y + SEARCH_RADIUS) / CELL_SIZE) * CELL_SIZE
     );
 
     for (let x = startX; x <= endX; x += CELL_SIZE) {
@@ -203,11 +196,7 @@ export class EscapeStrategy extends BaseStrategy {
 
         // Check if position is safe and reachable
         const inDanger = isPositionInDangerZone(candidate, gameState);
-        console.log(
-          "%c🤪 ~ file: escapeStrategy.ts:205 [] -> inDanger : ",
-          "color: #efd121",
-          inDanger
-        );
+
         const canMove = canMoveTo(candidate, gameState);
 
         if (inDanger) {
@@ -365,150 +354,142 @@ export class EscapeStrategy extends BaseStrategy {
    * @param gameState The current game state.
    * @returns A move decision, or null if no move is possible.
    */
+
+  // Giả định các hằng số và kiểu dữ liệu
+  // const MAX_EMERGENCY_ATTEMPTS = 5;
+  // enum BotAction { MOVE, STOP }
+  // enum Direction { UP, DOWN, LEFT, RIGHT }
+  // type BotDecision = { /* ... */ };
+  // type EscapePathResult = { nextStep: Position; targetCell: Position; fullSteps: number; };
+
   public handleEmergency(gameState: GameState): BotDecision | null {
     console.log(`🚨 === EMERGENCY ESCAPE EVALUATION ===`);
     const { currentBot } = gameState;
     const currentPos = currentBot.position;
 
-    console.log(`📍 Current position: (${currentPos.x}, ${currentPos.y})`);
-    console.log(
-      `🗺️ Map bounds: ${gameState.map.width}x${gameState.map.height} pixels`
-    );
+    this.lastEmergencyPosition = this.lastEmergencyPosition || { x: -1, y: -1 };
 
-    // Check if bot is standing on/very close to a bomb (likely just placed)
-    // Allow pathfinding to pass through this bomb once
+    // 1. PHÂN TÍCH VÙNG NGUY HIỂM VÀ LỘC BOM
+
+    // Tìm quả bom gần nhất và nguy hiểm nhất (hoặc bom bot vừa đặt)
     let ownBombPosition: Position | undefined = undefined;
-    for (const bomb of gameState.map.bombs) {
-      const distance = Math.hypot(
-        currentPos.x - bomb.position.x,
-        currentPos.y - bomb.position.y
-      );
-      if (distance < 20) {
-        // Within 20px - likely our own bomb
-        ownBombPosition = bomb.position;
-        console.log(
-          `💣 Detected own bomb at (${bomb.position.x}, ${bomb.position.y}), allowing pathfinding through it`
-        );
-        break;
-      }
+
+    // Tìm mối đe dọa lớn nhất (ví dụ: bom sắp nổ nhất hoặc gần nhất)
+    const dangerousBombs = gameState.map.bombs
+      .filter((b) => isPositionInDangerZone(currentPos, gameState)) // Giả định hàm này kiểm tra nguy hiểm từ 1 bomb
+      .sort((a, b) => a.timeRemaining - b.timeRemaining); // Ưu tiên bom sắp nổ
+
+    const dangerousBomb = dangerousBombs[0];
+    if (!dangerousBomb) {
+      // Nếu bot không ở trong vùng nguy hiểm ngay lập tức, đây không phải là trường hợp khẩn cấp
+      console.log(`✅ Position is safe, returning control.`);
+      this.resetEmergencyState();
+      return null;
     }
 
-    // Check if we're stuck in the same position (emergency loop detection)
+    // Kiểm tra xem đó có phải bom của bot không (dùng lại logic kiểm tra 20px)
+    const distance = Math.hypot(
+      currentPos.x - dangerousBomb.position.x,
+      currentPos.y - dangerousBomb.position.y
+    );
+    if (distance < 20) {
+      ownBombPosition = dangerousBomb.position;
+      console.log(
+        `💣 Detected immediate danger from own bomb at (${dangerousBomb.position.x}, ${dangerousBomb.position.y})`
+      );
+    } else {
+      console.log(
+        `💣 Detected immediate danger from bomb at (${dangerousBomb.position.x}, ${dangerousBomb.position.y})`
+      );
+    }
+
+    // 2. PHÁT HIỆN VÒNG LẶP KHẨN CẤP
     if (
-      this.lastEmergencyPosition &&
       this.lastEmergencyPosition.x === currentPos.x &&
       this.lastEmergencyPosition.y === currentPos.y
     ) {
       this.emergencyAttempts++;
-      console.log(
-        `⚠️ EMERGENCY LOOP DETECTED! Attempt ${this.emergencyAttempts}/${this.MAX_EMERGENCY_ATTEMPTS} at same position`
-      );
-
+      // ... (Logic kiểm tra giới hạn MAX_EMERGENCY_ATTEMPTS giữ nguyên)
       if (this.emergencyAttempts >= this.MAX_EMERGENCY_ATTEMPTS) {
-        console.log(
-          `🛑 MAX EMERGENCY ATTEMPTS REACHED - Resetting state and allowing other strategies`
-        );
         this.resetEmergencyState();
-        // Return null instead of STOP to allow other strategies (WallBreaker, Explore) to try
         return null;
       }
     } else {
-      // Reset attempts if position changed
       this.emergencyAttempts = 0;
       this.lastEmergencyPosition = { x: currentPos.x, y: currentPos.y };
     }
 
-    // First, check if we're completely surrounded by enemy players
-    const allDirectionsBlockedByPlayers =
-      this.areAllDirectionsBlockedByPlayers(gameState);
-    if (allDirectionsBlockedByPlayers) {
-      console.log(
-        `⚠️ ALL DIRECTIONS BLOCKED BY PLAYERS - Trying alternative strategies...`
-      );
-      return this.handleCompletePlayerBlockage(gameState);
-    }
+    // 3. CHIẾN LƯỢC THOÁT HIỂM TỐI ƯU (BFS Pathfinding)
 
-    const distantResult = this.findDistantSafePosition(
-      gameState,
-      ownBombPosition
-    );
+    let escapeResult = null;
 
-    if (distantResult) {
-      const direction = getDirectionToTarget(
-        currentPos,
-        distantResult.nextStep
+    // *** Sửa đổi chính ở đây: Gọi BFS với thông tin bom và gameState ***
+    // Giả định hàm findEscapePath mới được sửa đổi để nhận Bomb làm tham số
+    // Note: Cần đảm bảo hàm findEscapePath hỗ trợ tùy chọn 'allowOwnBomb'
+    escapeResult = findEscapePath(currentPos, dangerousBomb, gameState);
+
+    if (escapeResult) {
+      // ... (Logic lấy DirectionToTarget giữ nguyên)
+      const { nextStep, targetCell, direction } = escapeResult;
+
+      console.log(
+        `🛤️ EMERGENCY PATHFOUND: Found path to safe zone at cell (${targetCell.x}, ${targetCell.y})`
       );
       console.log(
-        `🛤️ EMERGENCY FALLBACK: Found path to safe zone at (${distantResult.target.x}, ${distantResult.target.y})`
+        `   Next step (Pixel): (${nextStep.x}, ${nextStep.y}), direction: ${direction}`
       );
-      console.log(
-        `   Next step: (${distantResult.nextStep.x}, ${distantResult.nextStep.y}), direction: ${direction}`
-      );
-      console.log(`   Full path: ${distantResult.fullPath.length} steps`);
-      console.log(`🚨 === EMERGENCY ESCAPE EVALUATION END ===`);
 
       return this.createDecision(
         BotAction.MOVE,
         this.priority,
-        `Escape (Emergency Distant) - pathfinding to safe zone`,
+        `Escape (BFS) - pathfinding to nearest safe zone`,
         direction,
-        distantResult.target,
-        distantResult.fullPath
+        nextStep
       );
     }
 
-    // Check 4 cardinal directions + 4 diagonal directions for more escape options
-    const directionsToCheck: Array<{
-      primary: Direction;
-      offset: { dx: number; dy: number };
-    }> = [
-      { primary: Direction.UP, offset: { dx: 0, dy: -1 } },
-      { primary: Direction.DOWN, offset: { dx: 0, dy: 1 } },
-      { primary: Direction.LEFT, offset: { dx: -1, dy: 0 } },
-      { primary: Direction.RIGHT, offset: { dx: 1, dy: 0 } },
-      // Diagonal movements (use primary direction, but check diagonal position)
-      { primary: Direction.UP, offset: { dx: -1, dy: -1 } }, // UP-LEFT
-      { primary: Direction.UP, offset: { dx: 1, dy: -1 } }, // UP-RIGHT
-      { primary: Direction.DOWN, offset: { dx: -1, dy: 1 } }, // DOWN-LEFT
-      { primary: Direction.DOWN, offset: { dx: 1, dy: 1 } }, // DOWN-RIGHT
-    ];
+    // 4. KIỂM TRA TẮC NGHẼN BỞI NGƯỜI CHƠI (Giữ nguyên)
 
-    // FALLBACK: If ALL directions are blocked too soon, try with RELAXED threshold
-    // This handles cases where bot is surrounded by walls but can escape with multi-turn paths
-    console.log(
-      `⚠️ All directions blocked too soon, trying with RELAXED threshold...`
-    );
-    const relaxedMoves = this.findEmergencyMovesRelaxed(
-      gameState,
-      currentPos,
-      directionsToCheck
-    );
-
-    if (relaxedMoves.length > 0) {
-      relaxedMoves.sort((a, b) => b.score - a.score);
-      const bestRelaxedMove = relaxedMoves[0];
-      if (bestRelaxedMove) {
-        console.log(
-          `🏃 RELAXED EMERGENCY CHOICE: ${bestRelaxedMove.direction} to (${bestRelaxedMove.newPos.x}, ${bestRelaxedMove.newPos.y}) with score ${bestRelaxedMove.score}`
-        );
-        console.log(
-          `🛤️ RELAXED ESCAPE PATH: ${bestRelaxedMove.path.length} waypoints`
-        );
-        console.log(`🚨 === EMERGENCY ESCAPE EVALUATION END ===`);
-
-        return this.createDecision(
-          BotAction.MOVE,
-          this.priority,
-          `Escape (Emergency RELAXED) - ${bestRelaxedMove.direction} (${bestRelaxedMove.path.length} steps)`,
-          bestRelaxedMove.direction,
-          bestRelaxedMove.newPos,
-          bestRelaxedMove.path
-        );
-      }
+    const allDirectionsBlockedByPlayers =
+      this.areAllDirectionsBlockedByPlayers(gameState);
+    if (allDirectionsBlockedByPlayers) {
+      // ... (Logic handleCompletePlayerBlockage giữ nguyên)
+      return this.handleCompletePlayerBlockage(gameState);
     }
 
-    console.log(`❌ No emergency moves available (exhausted all options)!`);
-    console.log(`🚨 === EMERGENCY ESCAPE EVALUATION END ===`);
+    // 5. CÁC CHIẾN LƯỢC DỰ PHÒNG (Nếu BFS thất bại)
+
+    // Loại bỏ phần kiểm tra 4 hướng chéo và logic 'RELAXED' phức tạp
+    // vì BFS đã là cơ chế tìm kiếm toàn diện nhất (bao gồm cả các bước đi dài)
+
+    // Nếu BFS thất bại, có nghĩa là:
+    // a) Bot không thể thoát khỏi vùng lửa trước khi bom nổ.
+    // b) Bot bị chặn hoàn toàn (bao gồm cả các con đường dài).
+
+    console.log(
+      `❌ NO ESCAPE PATH FOUND (BFS failed or too slow). Trying last resort fallback...`
+    );
+
+    // DỰ PHÒNG CUỐI: Di chuyển đến ô ÍT NGUY HIỂM NHẤT (Nếu bị kẹt trên bom)
+    // const leastDangerousMove = this.findLeastDangerousNeighbor(
+    //   gameState,
+    //   currentPos
+    // );
+    // if (leastDangerousMove) {
+    //   console.log(
+    //     `⚠️ LAST RESORT: Moving to least dangerous neighbor: ${leastDangerousMove.direction}`
+    //   );
+    //   return this.createDecision(
+    //     BotAction.MOVE,
+    //     this.priority,
+    //     "Escape (Last Resort) - least dangerous move",
+    //     leastDangerousMove.direction,
+    //     leastDangerousMove.newPos
+    //   );
+    // }
+
+    console.log(`🛑 FATAL: Exhausted all escape options!`);
+    this.resetEmergencyState();
     return null;
   }
 

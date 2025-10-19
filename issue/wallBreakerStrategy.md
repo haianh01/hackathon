@@ -138,3 +138,16 @@
 
 Enemy score nhỏ so với chest (evaluateBombPosition)
 Bot có thể bỏ lỡ cơ hội đánh enemy
+
+
+⚠️ Điểm Cần Cải Thiện và Cân Nhắc
+1. Điều kiện Trả về null (Line 140)
+Hiện tại, hàm trả về null nếu chestsCount === 0.
+
+return chestsCount > 0 ? {...} : null;
+Vấn đề: Điều này có nghĩa là bot sẽ không bao giờ đặt bom nếu nó chỉ có thể tiêu diệt enemy (cho 150 điểm) mà không phá được chest nào.
+
+Đề xuất cải thiện: Nên trả về kết quả nếu Total Score (bao gồm cả điểm enemy) vượt qua một ngưỡng tối thiểu nào đó, hoặc ít nhất là khi totalScore > 0.
+
+return totalScore > 0 ? {...} : null;
+Nếu không, chiến thuật sẽ quá tập trung vào phá chest và có thể bỏ lỡ cơ hội tiêu diệt đối thủ.

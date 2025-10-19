@@ -146,7 +146,7 @@ export class BombermanAI {
     //   console.log(`💡 Recommendations:`);
     //   analysis.recommendations.forEach((rec) => console.log(`   ${rec}`));
     // }
-    console.log(`🎮 === GAME PHASE ANALYSIS END ===\n`);
+    // console.log(`🎮 === GAME PHASE ANALYSIS END ===\n`);
 
     const decisions: BotDecision[] = this.strategies
       .map((strategy) => {
@@ -214,12 +214,48 @@ export class BombermanAI {
     console.log(`🧠 === AI DECISION MAKING END ===\n`);
 
     console.log(
-      `🤖 Bot decided: ${
-        bestDecision.reason
-      } (Priority: ${bestDecision.priority.toFixed(1)})`
+      `🤖 Bot decided: ${bestDecision.reason} (Priority: ${JSON.stringify(
+        bestDecision
+      )})`
     );
 
     return bestDecision;
+  }
+
+  /**
+   * Makes a decision when the bot is in a "waiting" state (e.g., after placing its last bomb).
+   * It prioritizes staying safe and observing.
+   * @param gameState The current state of the game.
+   * @returns A defensive or exploratory decision.
+   */
+  public makeDefensiveDecision(gameState: GameState): BotDecision {
+    // 1. Try to find a safe defensive position to observe.
+    const defensiveStrategy = this.strategies.find(
+      (s) => s.name === "Defensive"
+    ) as DefensiveStrategy;
+    if (defensiveStrategy) {
+      const decision = defensiveStrategy.evaluate(gameState);
+      if (decision) {
+        return decision;
+      }
+    }
+
+    // 2. If no defensive position, just explore nearby safely.
+    const exploreStrategy = this.strategies.find(
+      (s) => s.name === "Explore"
+    ) as ExploreStrategy;
+    if (exploreStrategy) {
+      const decision = exploreStrategy.evaluate(gameState);
+      if (decision) return decision;
+    }
+
+    // 3. If all else fails, just stop.
+    return {
+      action: BotAction.STOP,
+      direction: Direction.STOP,
+      priority: 1, // Low priority, just a fallback.
+      reason: "Waiting for bomb, no defensive move found, stopping.",
+    };
   }
 
   public makeDecisionEscape(gameState: GameState): BotDecision {
@@ -328,7 +364,7 @@ export class BombermanAI {
       new EscapeStrategy(), // 100 - Highest priority - escape danger
       // new BombStrategy(), // 80 - Place bombs strategically
       // new AttackStrategy(), // 80 - Attack enemies
-      // new DefensiveStrategy(), // 70 - Play defensively
+      new DefensiveStrategy(), // 70 - Play defensively
       // new CollectStrategy(), // 60 - Collect items
       new WallBreakerStrategy(), // 50 - Break walls
       new ExploreStrategy(), // 40 - Explore the map

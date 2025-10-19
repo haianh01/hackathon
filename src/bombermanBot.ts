@@ -10,7 +10,27 @@ import {
 } from "./types";
 import { SocketConnection } from "./connection/socketConnection";
 import { getDirectionToTarget } from "./utils/position";
-import { CELL_SIZE, isPositionInDangerZone, PLAYER_SIZE } from "./utils";
+import {
+  CELL_SIZE,
+  cellToCellIndex,
+  isPositionInDangerZone,
+  pixelToCellCenter,
+  PLAYER_SIZE,
+} from "./utils";
+
+// File-level constants to avoid magic numbers and make tuning easier
+const BOT_LOGIC_INTERVAL = 800; // ms between main bot ticks
+const PATH_FOLLOW_LOOKAHEAD = 5; // how many path waypoints to search ahead
+const BOMB_PLACED_DISTANCE = 5; // px - consider bomb "just placed" if within this distance
+const BOMB_SAFETY_MARGIN = 80; // px extra margin used when computing danger radius
+const PLAYER_REACH_THRESHOLD = CELL_SIZE / 2; // alias for clarity when checking reach
+// After clearing an emergency escape state, wait this long before allowing
+// normal decision logic to override state. This prevents race conditions when
+// server events or danger detection lag behind client-side state.
+const EMERGENCY_CLEAR_COOLDOWN_MS = 500; // ms
+// Extra leniency (pixels) to account for drift between server-confirmed
+// position and client-side movement/prediction.
+const REACH_MARGIN_PIXELS = 8; // px
 
 /**
  * Main Bot class - the primary entry point for the application.
@@ -36,6 +56,25 @@ export class BomberManBot {
 
   // State tracking for danger detection
   private lastBombCount: number = 0;
+  // Timestamp when an emergency escape state was last cleared (ms since epoch)
+  // Used to prevent normal logic from immediately overriding emergency behavior.
+  private lastEmergencyClearedAt: number | null = null;
+
+  // State for correlating client-predicted bombs with server-confirmed bombs.
+  // Stores the position of a bomb we just placed and are waiting for confirmation.
+  private pendingPredictedBomb: Position | null = null;
+
+  // State to wait for our own bomb to explode if we have no more bombs left.
+  private isWaitingForOwnBomb: boolean = false;
+
+  // Path-following plan state
+  private currentPlan: {
+    phase: "MOVING_TO_TARGET";
+    path: Position[];
+    bombPosition: Position;
+    targetChests: number;
+    plannedAt: number;
+  } | null = null;
 
   constructor(serverAddress?: string, botToken?: string) {
     this.ai = new BombermanAI();
@@ -89,7 +128,7 @@ export class BomberManBot {
     });
     this.socketConnection.onPositionUpdate((x: number, y: number) => {
       console.log(
-        `📍 Position updated from server: (${x}40, ${y}), (${Math.floor(
+        `📍 Position updated from server: (${x}, ${y}), (${Math.floor(
           x / 40
         )}, ${Math.floor(y / 40)})`
       );
@@ -109,44 +148,55 @@ export class BomberManBot {
    */
   private setupRealtimeEventCallbacks(): void {
     this.socketConnection.onNewBomb((data: any) => {
-      console.log(`⚡ Realtime: New bomb at (${data.x}, ${data.y})`);
+      console.log(
+        `⚡ Realtime: New bomb from server at (${data.x}, ${data.y}) with ID ${data.id}`
+      );
+      const myBomber = this.socketConnection.getMyBomberInfo();
 
-      // CRITICAL: Update gameState immediately with the new bomb
-      // This ensures AI has correct bomb information when calculating escape routes
-      this.gameEngine.addBombRealtime(data);
-
-      // Check if this is NOT our predicted bomb (avoid duplicate escape triggers)
-      const currentBot = this.gameEngine.getCurrentBot();
-      if (currentBot) {
-        const distance = Math.hypot(
-          currentBot.position.x - data.x,
-          currentBot.position.y - data.y
+      // --- PREDICT & CORRELATE LOGIC ---
+      // Check if this is the server confirming a bomb we just predicted
+      if (this.pendingPredictedBomb && myBomber && data.uid === myBomber.uid) {
+        const dist = Math.hypot(
+          this.pendingPredictedBomb.x - data.x,
+          this.pendingPredictedBomb.y - data.y
         );
 
-        // If we just placed a bomb (distance < 5px) and already have emergency escape path,
-        // skip this handler to avoid duplicate escape triggers
-        if (distance < 5 && this.emergencyEscapePath) {
+        // If the server bomb is close to our predicted one, it's a match!
+        if (dist < CELL_SIZE / 2) {
           console.log(
-            `⏩ Skipping socket bomb handler - already have emergency escape from client-side prediction`
+            `✅ Correlated predicted bomb with server bomb ID: ${data.id}`
           );
+          // Update the temporary bomb in our game state with the real ID
+          this.gameEngine.confirmPredictedBomb(this.pendingPredictedBomb, data);
+          // Clear the pending state
+          this.pendingPredictedBomb = null;
+          // IMPORTANT: Return here to avoid treating our own confirmed bomb as a new threat
           return;
         }
       }
 
-      // Handle bombs from other players or if client-side prediction failed
+      // If it's not our correlated bomb, it's a new threat from another player.
+      // Add it to the game state and check for danger.
+      this.gameEngine.addBombRealtime(data);
       this.handleImmediateBombThreat(data);
     });
 
     this.socketConnection.onBombExplode((data: any) => {
       console.log(`⚡ Realtime: Bomb exploded at (${data.x}, ${data.y})`);
       // TODO: Remove bomb from danger list
-      this.gameEngine.removeBombRealtime(data.id);
+      this.gameEngine.removeBombRealtime(data);
       if (data.uid === this.socketConnection.getMyBomberInfo()?.uid) {
-        // If our own bomb exploded, we can stop any ongoing emergency escape
-        console.log(
-          `💥 Our bomb exploded, clearing emergency escape state if any.`
-        );
-        this.botLogicInterval = setInterval(() => this.executeBotLogic(), 200);
+        console.log(`💥 Our bomb exploded, re-evaluating game state.`);
+
+        if (this.isWaitingForOwnBomb) {
+          console.log(
+            "✅ Bomb exploded, exiting 'waiting for explosion' state."
+          );
+          this.isWaitingForOwnBomb = false;
+        }
+
+        // để bot đánh giá lại tình huống sau vụ nổ (ngắt chế độ khẩn cấp).
+        this.executeBotLogic();
       }
     });
 
@@ -181,155 +231,200 @@ export class BomberManBot {
    * Sets up the bot's logic loop to run at a fixed interval.
    */
   private setupBotLogic(): void {
-    this.botLogicInterval = setInterval(() => this.executeBotLogic(), 200);
+    this.botLogicInterval = setInterval(
+      () => this.executeBotLogic(),
+      BOT_LOGIC_INTERVAL
+    );
   }
 
   /**
    * Executes the main bot logic.
    */
   private executeBotLogic(): void {
-    // Prevent overlapping execution if previous tick is still running
-    if (this.isExecuting) {
-      console.warn("⚠️ Previous tick still running, skipping this tick...");
+    // Prevent overlapping execution and ensure game is running
+    if (
+      this.isExecuting ||
+      !this.socketConnection.isGameRunning() ||
+      !this.isRunning
+    ) {
+      if (this.isExecuting)
+        console.warn("⚠️ Previous tick still running, skipping this tick...");
       return;
     }
 
-    if (!this.socketConnection.isGameRunning() || !this.isRunning) {
-      return;
-    }
-
-    // Start timing and set execution guard
-    const startTime = Date.now();
     this.isExecuting = true;
-
+    const startTime = Date.now();
+    console.log("🤖 Executing bot logic...");
     try {
-      const gameState = this.gameEngine.getGameState();
+      // Cache frequently used references
+      const socket = this.socketConnection;
+      const ai = this.ai;
+      const engine = this.gameEngine;
+      const gameState = engine.getGameState();
+      const currentBot = socket.getMyBomberInfo();
 
-      // PRIORITY 1: Continue emergency escape if active
-      if (this.emergencyEscapePath && this.emergencyEscapeTarget) {
-        console.log(`🚨 Continuing emergency escape path...`);
-
-        // Check if we've reached the emergency escape target AND position is actually safe
-        const currentBot = this.socketConnection.getMyBomberInfo();
-
-        if (currentBot) {
-          const distanceToTarget = Math.hypot(
-            currentBot.x - this.emergencyEscapeTarget.x,
-            currentBot.y - this.emergencyEscapeTarget.y
-          );
-
-          const REACHED_THRESHOLD = CELL_SIZE / 2; // 20 pixels
-
-          // Import safety check function
-          const isCurrentlySafe = !isPositionInDangerZone(
-            currentBot,
-            gameState
-          );
-
-          if (distanceToTarget < REACHED_THRESHOLD && isCurrentlySafe) {
-            console.log(
-              `✅ Emergency escape target reached AND position is safe! Clearing emergency state.`
-            );
-            this.emergencyEscapePath = null;
-            this.emergencyEscapeTarget = null;
-            if (this.botLogicInterval) {
-              clearInterval(this.botLogicInterval);
-              this.botLogicInterval = undefined;
-              console.log("⏹️ Stopped continuous move botLogicInterval.");
-            }
-            // Fall through to normal AI decision
-          } else if (distanceToTarget < REACHED_THRESHOLD && !isCurrentlySafe) {
-            console.warn(
-              `⚠️ Target not safe yet, continuing emergency escape...`
-            );
-            // OPTION 2 FIX: Don't clear emergency path, continue following it
-            // The path will naturally extend or AI will re-evaluate if truly needed
-            const emergencyDecision: BotDecision = {
-              action: BotAction.MOVE,
-              path: this.emergencyEscapePath,
-              target: this.emergencyEscapeTarget,
-              priority: 100,
-              reason: "Emergency escape continuation (target not safe yet)",
-              direction: Direction.STOP,
-            };
-
-            // OPTION 1 FIX: Update lastBombCount to prevent false "new bomb" detection
-            this.lastBombCount = gameState.map.bombs.length;
-
-            this.executeAction(emergencyDecision);
-
-            const totalTime = Date.now() - startTime;
-            console.log(`⏱️ Emergency tick: Total=${totalTime}ms`);
-            return;
-          } else {
-            const emergencyDecision: BotDecision = {
-              action: BotAction.MOVE,
-              path: this.emergencyEscapePath,
-              target: this.emergencyEscapeTarget,
-              priority: 100,
-              reason: "Emergency escape continuation",
-              direction: Direction.STOP,
-            };
-
-            // OPTION 1 FIX: Update lastBombCount even when returning early
-            this.lastBombCount = gameState.map.bombs.length;
-
-            this.executeAction(emergencyDecision);
-
-            const totalTime = Date.now() - startTime;
-            console.log(`⏱️ Emergency tick: Total=${totalTime}ms`);
-            return;
-          }
-        }
+      // PRIORITY: Handle emergency escape if active. If it returns true,
+      // the emergency was handled and we should short-circuit this tick.
+      if (this.isHandlingEmergencyEscape(currentBot, gameState)) {
+        return;
       }
 
-      // SOLUTION 4: Detect state changes and abort path if needed
-      const currentBombCount = gameState.map.bombs.length;
-      if (currentBombCount > this.lastBombCount) {
-        console.warn(
-          `⚠️ New bombs detected! (${this.lastBombCount} -> ${currentBombCount}) Clearing current path for re-evaluation.`
+      // PRIORITY: If waiting for our bomb, execute a defensive/waiting action.
+      if (this.isWaitingForOwnBomb) {
+        console.log(
+          "⏳ Waiting for own bomb to explode. Executing defensive action."
         );
-        this.clearPath(); // Force re-evaluation with new danger state
-        this.emergencyEscapePath = null; // Also clear emergency path
+        const defensiveDecision = this.ai.makeDefensiveDecision(gameState);
+        this.executeAction(defensiveDecision);
+        // Short-circuit to prevent other logic from running.
+        this.isExecuting = false;
+        return;
+      }
+
+      // Normal path/decision execution
+      this.handleNormalPathExecution(currentBot, gameState);
+    } catch (err) {
+      console.error("❌ Error in bot logic:", err);
+    } finally {
+      this.isExecuting = false;
+    }
+  }
+
+  /**
+   * Returns true if emergency escape handling took action and this tick should stop.
+   */
+  private isHandlingEmergencyEscape(
+    currentBot: any | null,
+    gameState: any
+  ): boolean {
+    if (this.emergencyEscapePath && this.emergencyEscapeTarget && currentBot) {
+      const dx = currentBot.x - this.emergencyEscapeTarget.x;
+      const dy = currentBot.y - this.emergencyEscapeTarget.y;
+      const distanceToTarget = Math.hypot(dx, dy);
+      const REACHED_THRESHOLD = PLAYER_REACH_THRESHOLD;
+
+      const isCurrentlySafe = !isPositionInDangerZone(currentBot, gameState);
+
+      // Case 1: Already safe — clear emergency state but allow this tick to continue
+      if (isCurrentlySafe) {
+        console.log(
+          "✅ Bot đã ở vùng an toàn. Hủy bỏ trạng thái thoát hiểm khẩn cấp."
+        );
+        this.emergencyEscapePath = null;
         this.emergencyEscapeTarget = null;
         this.socketConnection.stopContinuousMove();
+        this.clearPath();
+        // record when emergency was cleared to prevent immediate override by normal logic
+        this.lastEmergencyClearedAt = Date.now();
+
+        // Do NOT short-circuit; allow normal logic to run in this tick
+        return false;
       }
 
-      this.lastBombCount = currentBombCount;
+      // Case 2: Still in danger — recompute escape and act immediately
+      console.warn(
+        "🏃 Vẫn trong vùng nguy hiểm. Tiếp tục hoặc tính toán lại đường thoát hiểm."
+      );
+      this.lastBombCount = gameState.map.bombs.length;
+      const reDecision = this.ai.makeDecisionEscape(gameState);
 
-      const decisionStartTime = Date.now();
+      if (reDecision.action === BotAction.MOVE && reDecision.target) {
+        // Update emergency escape state with new path/target
+        this.emergencyEscapeTarget = reDecision.target;
+        this.emergencyEscapePath = reDecision.path || [
+          currentBot.position,
+          reDecision.target,
+        ];
+
+        // Execute escape immediately
+        this.executeAction(reDecision);
+      } else {
+        // AI couldn't find a move — stop as last resort
+        console.error("❌ KHÔNG THỂ TÌM THẤY ĐƯỜNG THOÁT HIỂM! Dừng lại.");
+        this.executeAction({
+          action: BotAction.STOP,
+          reason: "No escape path found",
+        } as any);
+      }
+
+      // Short-circuit: emergency handled this tick
+      return true;
+    }
+
+    // Not handling emergency escape
+    return false;
+  }
+
+  /**
+   * Handles non-emergency decision making and path following.
+   */
+  private handleNormalPathExecution(
+    currentBot: any | null,
+    gameState: any
+  ): void {
+    // If we just cleared an emergency escape state, wait a short cooldown
+    // before letting normal logic overwrite paths. This prevents flip-flopping
+    // when danger detection lags behind.
+    if (
+      this.lastEmergencyClearedAt &&
+      Date.now() - this.lastEmergencyClearedAt < EMERGENCY_CLEAR_COOLDOWN_MS
+    ) {
+      // still in cooldown window — skip normal decision making this tick
+      console.log(
+        `⏳ Emergency clear cooldown active (${
+          Date.now() - this.lastEmergencyClearedAt
+        }ms elapsed), skipping normal logic.`
+      );
+      return;
+    }
+    // Update bomb count (cheap) and clear path if needed
+    this.lastBombCount = gameState.map.bombs.length;
+
+    // Determine if current path target is reached
+    let distanceToTarget = Infinity;
+    if (currentBot && this.currentPath && this.currentPath.length) {
+      const last = this.currentPath[this.currentPath.length - 1];
+
+      if (last) {
+        const dx = currentBot.x - last.x;
+        const dy = currentBot.y - last.y;
+        distanceToTarget = Math.hypot(dx, dy);
+      }
+    }
+    console.log(
+      "bothandleNormalPathExecution - distanceToTarget:",
+      distanceToTarget
+    );
+    if (this.currentPath && currentBot) {
+      const lastPos = this.currentPath.length
+        ? this.currentPath[this.currentPath.length - 1]
+        : undefined;
+      console.log("pass", this.isAtPosition(currentBot, lastPos, 30));
+      if (lastPos && this.isAtPosition(currentBot, lastPos, 30)) {
+        console.log(
+          "✅ Detected arrival at current path target (normal logic). Clearing currentPath."
+        );
+        this.clearPath();
+      }
+    }
+
+    // If no active path, ask AI for a decision
+
+    if (!this.currentPath || this.currentPath.length === 0) {
+      (gameState as any).bombermanCurrentPlan = this.currentPlan;
+      const decisionStart = Date.now();
       const decision = this.ai.makeDecision(gameState);
-      const decisionTime = Date.now() - decisionStartTime;
+      const decisionTime = Date.now() - decisionStart;
 
-      console.log(
-        `🤖 AI Decision: ${decision.action} -> ${
-          decision.direction || "N/A"
-        } with priority ${decision.priority} (took ${decisionTime}ms)`
-      );
-
-      const actionStartTime = Date.now();
       this.executeAction(decision);
-      const actionTime = Date.now() - actionStartTime;
 
-      // Calculate total execution time
-      const totalTime = Date.now() - startTime;
-
-      // Log performance metrics
-      console.log(
-        `⏱️ Tick performance: Decision=${decisionTime}ms, Action=${actionTime}ms, Total=${totalTime}ms`
-      );
-
-      // Warn if execution is taking too long (>150ms for 200ms interval)
+      const totalTime = Date.now() - decisionStart; // measure only decision time here
+      // Keep only actionable warnings to reduce noise
       if (totalTime > 150) {
         console.warn(
-          `⚠️ Slow tick detected! Execution took ${totalTime}ms (target: <150ms for 200ms interval)`
+          `⚠️ Slow decision: ${totalTime}ms (decision ${decisionTime}ms)`
         );
       }
-    } catch (error) {
-      console.error("❌ Error in bot logic:", error);
-    } finally {
-      // Always release the execution guard
-      this.isExecuting = false;
     }
   }
 
@@ -337,10 +432,20 @@ export class BomberManBot {
    * Executes an action based on the AI's decision.
    */
   private executeAction(decision: BotDecision): void {
+    // Log the high-level decision for easier debugging of strategy switches
+    try {
+      console.log(
+        `🤖 executeAction: ${decision.reason} (action: ${decision.action}, priority: ${decision.priority})`
+      );
+    } catch (e) {
+      // Fallback: ensure logging never throws
+    }
     switch (decision.action) {
       case BotAction.MOVE:
         if (decision.path && decision.path.length > 1) {
           this.followPath(decision);
+        } else if (decision.target && decision.direction) {
+          this.followNextStep(decision);
         } else if (decision.direction) {
           this.clearPath();
           this.socketConnection.startContinuousMove(decision.direction);
@@ -348,25 +453,50 @@ export class BomberManBot {
         break;
       case BotAction.BOMB:
         this.clearPath();
-        this.socketConnection.stopContinuousMove();
+        this.socketConnection.stopContinuousMove(); // Stop moving first
         this.socketConnection.placeBomb();
         const currentBot = this.gameEngine.getCurrentBot();
 
         if (currentBot) {
-          this.ai.markBombPlaced(currentBot.position);
+          // Snap to cell center for consistency
+          const snappedBombPos = pixelToCellCenter(currentBot.position);
 
+          // Prevent adding duplicate predictions if a pending one already exists
+          if (
+            this.pendingPredictedBomb &&
+            Math.hypot(
+              this.pendingPredictedBomb.x - snappedBombPos.x,
+              this.pendingPredictedBomb.y - snappedBombPos.y
+            ) < 10
+          ) {
+            console.warn(
+              "⏩ Skipping bomb prediction: already have a pending bomb at this location."
+            );
+            break;
+          }
+
+          this.ai.markBombPlaced(snappedBombPos);
+          // Set the pending bomb position for correlation in the onNewBomb event
+          this.pendingPredictedBomb = snappedBombPos;
+
+          // Create a temporary bomb object for immediate client-side reaction
           const predictedBomb = {
-            x: currentBot.position.x,
-            y: currentBot.position.y,
+            x: snappedBombPos.x,
+            y: snappedBombPos.y,
             range: currentBot.flameRange || 2,
-            id: `predicted-${Date.now()}`,
+            id: `predicted-${snappedBombPos.x}-${snappedBombPos.y}`, // A more stable temporary ID
+            ownerId: currentBot.id, // Mark it as ours
           };
-
-          // Add predicted bomb to game state
           this.gameEngine.addBombRealtime(predictedBomb);
-
-          // Trigger immediate escape WITHOUT waiting for socket event
           this.handleImmediateBombThreat(predictedBomb);
+
+          // If we have no bombs left after this, enter waiting state.
+          if (currentBot.bombCount <= 1) {
+            this.isWaitingForOwnBomb = true;
+            console.log(
+              "⏳ Bot has no more bombs, entering 'waiting for explosion' state."
+            );
+          }
         }
         break;
       case BotAction.STOP:
@@ -398,7 +528,7 @@ export class BomberManBot {
     if (isNewPath) {
       // Start following new path
       console.log(
-        `🛤️ Starting new path: ${decision.path.length} steps to (${decision.target?.x}, ${decision.target?.y})`
+        `🛤️ Starting new path: ${decision.path.length} steps to (${decision.target?.x}, ${decision.target?.y}) — reason: ${decision.reason} (priority: ${decision.priority})`
       );
       this.currentPath = decision.path;
       this.currentPathIndex = 0;
@@ -416,8 +546,8 @@ export class BomberManBot {
     }
 
     // OPTIMIZATION: Only search next few waypoints instead of entire remaining path
-    // This bounds execution time to O(k) where k=5, instead of O(n) where n=path.length
-    const LOOK_AHEAD_COUNT = 5;
+    // This bounds execution time to O(k) where k=PATH_FOLLOW_LOOKAHEAD, instead of O(n) where n=path.length
+    const LOOK_AHEAD_COUNT = PATH_FOLLOW_LOOKAHEAD;
     const searchEndIndex = Math.min(
       this.currentPathIndex + LOOK_AHEAD_COUNT,
       this.currentPath.length
@@ -443,14 +573,7 @@ export class BomberManBot {
     this.currentPathIndex = closestIndex;
 
     // Check if we reached the target
-    const REACHED_THRESHOLD = 20; // pixels - consider reached if within this distance
-    if (
-      this.pathTarget &&
-      Math.hypot(
-        currentPos.x - this.pathTarget.x,
-        currentPos.y - this.pathTarget.y
-      ) < REACHED_THRESHOLD
-    ) {
+    if (this.pathTarget && this.isAtPosition(currentPos, this.pathTarget)) {
       console.log(
         `✅ Reached path target at (${this.pathTarget.x}, ${this.pathTarget.y})`
       );
@@ -486,12 +609,91 @@ export class BomberManBot {
   }
 
   /**
+   * Thực hiện bước di chuyển đơn lẻ (nextStep) được cung cấp trong BotDecision,
+   * thay vì quản lý toàn bộ một đường đi dài (fullPath).
+   * * Hàm này lý tưởng cho các quyết định khẩn cấp (Emergency Decisions)
+   * nơi chỉ cần thực hiện nextStep từ BFS.
+   */
+  private followNextStep(decision: BotDecision): void {
+    const currentBot = this.gameEngine.getCurrentBot();
+
+    // Kiểm tra điều kiện cần thiết: Bot, Target và Direction phải tồn tại
+    if (!currentBot || !decision.target || !decision.direction) {
+      console.log(
+        "⚠️ executeNextStep: Missing bot, target, or direction in decision."
+      );
+      return;
+    }
+
+    const currentPos = currentBot.position;
+    const nextWaypoint = decision.target; // decision.target chứa nextStep pixel position từ Emergency Escape
+
+    // 1. Kiểm tra đã đến đích chưa (Trường hợp Bot bị lag hoặc đã gần đến đích)
+    if (this.isAtPosition(currentPos, nextWaypoint, 10)) {
+      console.log(
+        `✅ Reached next step target at (${nextWaypoint.x}, ${nextWaypoint.y}). Stopping and waiting for next decision.`
+      );
+      this.socketConnection.stopContinuousMove();
+      this.clearPath();
+      return;
+    }
+
+    // 2. Tính toán lại hướng (để chống lại drift)
+    const direction = getDirectionToTarget(currentPos, nextWaypoint);
+
+    // Distance left for logging/debugging
+    const distToTarget = Math.hypot(
+      currentPos.x - nextWaypoint.x - 20,
+      currentPos.y - nextWaypoint.y - 20
+    );
+
+    console.log(
+      `🎯 Executing Next Step: ${direction} to (${nextWaypoint.x}, ${
+        nextWaypoint.y
+      }). Dist remaining: ${distToTarget.toFixed(2)}px — reason: ${
+        decision.reason
+      } (priority: ${decision.priority})`
+    );
+
+    // 3. Thực hiện di chuyển liên tục
+    this.socketConnection.startContinuousMove(direction);
+
+    // Gán đường đi để BotStrategy biết rằng nó đang thực hiện một lệnh MOVE
+    // Dù chỉ là 1 bước, ta vẫn cần lưu nó để tránh bị gián đoạn.
+    this.currentPath = [currentPos, nextWaypoint];
+    this.currentPathIndex = 0;
+    this.pathTarget = nextWaypoint;
+  }
+
+  /**
    * Clears the current path tracking state.
    */
   private clearPath(): void {
     this.currentPath = null;
     this.currentPathIndex = 0;
     this.pathTarget = null;
+  }
+
+  /**
+   * Robust reach-detection helper.
+   * Returns true when currentPos is considered to have reached targetPos.
+   * Uses either cell-aligned equality (rounded) or a pixel-distance threshold
+   * with a small margin to avoid false negatives due to minor offsets.
+   */
+  private isAtPosition(
+    currentPos: Position,
+    targetPos: Position | undefined,
+    threshold?: number
+  ): boolean {
+    if (!currentPos || !targetPos) return false;
+
+    const effectiveThreshold =
+      (threshold ?? PLAYER_REACH_THRESHOLD) + REACH_MARGIN_PIXELS;
+
+    const dx = currentPos.x - targetPos.x;
+    const dy = currentPos.y - targetPos.y;
+    const dist = Math.hypot(dx, dy);
+    return dist <= effectiveThreshold;
   }
 
   /**
@@ -513,57 +715,53 @@ export class BomberManBot {
 
     // Calculate danger radius (in pixels)
     // Formula: (range * cellSize) + safety margin
-    const CELL_SIZE = 40;
-    const SAFETY_MARGIN = 80; // 2 cells margin
-    const dangerRadius = bombRange * CELL_SIZE + PLAYER_SIZE;
+    const dangerRadius =
+      bombRange * CELL_SIZE + PLAYER_REACH_THRESHOLD + BOMB_SAFETY_MARGIN;
 
-    console.log(
-      `🔍 Bomb threat analysis: botPos=(${currentBot.position.x}, ${
-        currentBot.position.y
-      }), bombPos=(${bombPos.x}, ${bombPos.y}), distance=${distance.toFixed(
-        0
-      )}px, dangerRadius=${dangerRadius}px`
-    );
-
-    // Special case: If bot is EXACTLY on bomb (distance < 5px), it just placed the bomb
+    // Special case: If bot is EXACTLY on bomb (distance < BOMB_PLACED_DISTANCE), it just placed the bomb
     // Always trigger escape in this case
-    const isOnBomb = distance < 5;
+    const isOnBomb = distance < BOMB_PLACED_DISTANCE;
 
     // Check if bot is in immediate danger
-    // if (isOnBomb || distance < dangerRadius) {
-    //   if (isOnBomb) {
-    //     console.warn(
-    //       `🚨 JUST PLACED BOMB! Bot at bomb position, forcing immediate escape!`
-    //     );
-    //   }
-    //   console.warn(
-    //     `🚨 IMMEDIATE THREAT! Bomb ${distance.toFixed(
-    //       0
-    //     )}px away (danger threshold: ${dangerRadius}px)`
-    //   );
+    if (isOnBomb || distance < dangerRadius) {
+      if (isOnBomb) {
+        console.warn(
+          `🚨 JUST PLACED BOMB! Bot at bomb position, forcing immediate escape!`
+        );
+      }
+      console.warn(
+        `🚨 IMMEDIATE THREAT! Bomb ${distance.toFixed(
+          0
+        )}px away (danger threshold: ${dangerRadius}px)`
+      );
 
-    //   // INTERRUPT current action immediately
-    //   this.socketConnection.stopContinuousMove();
-    //   this.clearPath();
+      // INTERRUPT current action immediately
+      this.socketConnection.stopContinuousMove();
+      this.clearPath();
 
-    //   // Get escape decision from AI (uses EscapeStrategy with A* pathfinding)
-    //   const gameState = this.gameEngine.getGameState();
-    //   const escapeDecision = this.ai.makeDecisionEscape(gameState);
+      // Get escape decision from AI (uses EscapeStrategy with A* pathfinding)
+      const gameState = this.gameEngine.getGameState();
+      const escapeDecision = this.ai.makeDecisionEscape(gameState);
 
-    //   console.log(`🏃 EMERGENCY ESCAPE: ${escapeDecision.reason}`);
+      console.log(`🏃 EMERGENCY ESCAPE: ${escapeDecision.reason}`);
 
-    //   // CRITICAL: Save emergency escape path so regular ticks can continue following it
-    //   if (escapeDecision.path && escapeDecision.path.length > 1) {
-    //     this.emergencyEscapePath = escapeDecision.path;
-    //     this.emergencyEscapeTarget = escapeDecision.target || null;
-    //     console.log(
-    //       `🛤️ Emergency path saved: ${escapeDecision.path.length} steps to (${escapeDecision.target?.x}, ${escapeDecision.target?.y})`
-    //     );
-    //   }
+      // CRITICAL: Save emergency escape path so regular ticks can continue following it
+      if (escapeDecision.target) {
+        this.emergencyEscapeTarget = escapeDecision.target;
+        // THÊM DÒNG NÀY VÀO
+        this.emergencyEscapePath = escapeDecision.path || [
+          this.gameEngine.getCurrentBot()!.position,
+          escapeDecision.target,
+        ];
 
-    //   // Execute emergency escape immediately (starts movement)
-    //   this.executeAction(escapeDecision);
-    // }
+        console.log(
+          `🛤️ Emergency path saved: ${this.emergencyEscapePath.length} steps to (${escapeDecision.target?.x}, ${escapeDecision.target?.y})`
+        );
+      }
+
+      // Execute emergency escape immediately (starts movement)
+      this.executeAction(escapeDecision);
+    }
   }
 
   /**

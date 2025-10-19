@@ -111,6 +111,36 @@ export function getDirectionToTarget(from: Position, to: Position): Direction {
 }
 
 /**
+ * Lấy hướng di chuyển chính xác dựa trên hai bước (cell index) liên tiếp trong một đường đi.
+ * Hàm này đáng tin cậy hơn getDirectionToTarget vì nó không bị ảnh hưởng bởi sự trôi/lệch pixel.
+ * @param fromCell - Cell index của vị trí bắt đầu.
+ * @param toCell - Cell index của vị trí kế tiếp.
+ * @returns Hướng di chuyển (UP, DOWN, LEFT, RIGHT).
+ */
+export function getDirectionFromPathStep(
+  fromCell: Position,
+  toCell: Position
+): Direction {
+  const dx = toCell.x - fromCell.x; // Sẽ là -1, 0, hoặc 1
+  const dy = toCell.y - fromCell.y; // Sẽ là -1, 0, hoặc 1
+
+  if (dx === 1) {
+    return Direction.RIGHT;
+  }
+  if (dx === -1) {
+    return Direction.LEFT;
+  }
+  if (dy === 1) {
+    return Direction.DOWN;
+  }
+  if (dy === -1) {
+    return Direction.UP;
+  }
+
+  return Direction.STOP; // Fallback, không nên xảy ra với đường đi hợp lệ
+}
+
+/**
  * Tạo mảng các vị trí từ vị trí bắt đầu đến vị trí kết thúc theo hướng
  * Each step moves one full cell (CELL_SIZE = 40 pixels)
  */

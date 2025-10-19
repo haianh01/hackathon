@@ -90,13 +90,52 @@ export class GameEngine {
       this.gameState.map.bombs.push(newBomb);
     }
   }
+
+  /**
+   * Finds a predicted bomb in the game state and updates it with the
+   * real data received from the server.
+   * @param predictedPosition The position of the bomb we predicted.
+   * @param serverBombData The final bomb data from the server, including the real ID.
+   */
+  public confirmPredictedBomb(
+    predictedPosition: Position,
+    serverBombData: any
+  ): void {
+    // Find the temporary bomb in our state that matches the predicted position
+    const tempBomb = this.gameState.map.bombs.find((bomb) => {
+      // Match by position and check if it's a predicted bomb
+      const isPredicted = String(bomb.id).startsWith("predicted-");
+      const dist = Math.hypot(
+        bomb.position.x - predictedPosition.x,
+        bomb.position.y - predictedPosition.y
+      );
+      return isPredicted && dist < 10;
+    });
+
+    if (tempBomb) {
+      const index = this.gameState.map.bombs.indexOf(tempBomb);
+      console.log(
+        `✅ Correlating bomb. Replacing temp ID ${tempBomb.id} with real ID ${serverBombData.id} at index ${index}.`
+      );
+      // Replace the temporary bomb with the real one from the server
+      // to ensure all data (ID, exact position, etc.) is accurate.
+      this.gameState.map.bombs[index] = {
+        id: serverBombData.id,
+        position: { x: serverBombData.x, y: serverBombData.y },
+        ownerId: serverBombData.uid,
+        timeRemaining: serverBombData.timeRemaining ?? 5000,
+        flameRange: serverBombData.range || serverBombData.explosionRange || 2,
+      };
+    }
+  }
   // ...existing code...
   /**
    * Remove a bomb from the game state that was exploded (realtime).
    * Safe: checks for structure existence and attempts to update any danger maps.
+   * @param bombIdentifier Can be a Position object or an object with an `id` property.
    */
-  public removeBombRealtime(bombId: string): void {
-    if (!bombId) return;
+  public removeBombRealtime(bombIdentifier: Position | { id: any }): void {
+    if (!bombIdentifier) return;
 
     // Defensive checks for game state structure
     if (
@@ -108,9 +147,21 @@ export class GameEngine {
     }
 
     const bombs = this.gameState.map.bombs;
-    const idx = bombs.findIndex(
-      (b: any) => b && (b.id === bombId || b._id === bombId)
-    );
+    let idx = -1;
+
+    if ("id" in bombIdentifier) {
+      idx = bombs.findIndex((b) => b.id === bombIdentifier.id);
+    } else if ("x" in bombIdentifier && "y" in bombIdentifier) {
+      // Fallback to position for predicted bombs or events without ID
+      idx = bombs.findIndex((b) => {
+        const dist = Math.hypot(
+          b.position.x - bombIdentifier.x,
+          b.position.y - bombIdentifier.y
+        );
+        return dist < 10; // Use a small threshold for position matching
+      });
+    }
+
     if (idx === -1) {
       // nothing to remove
       return;
@@ -132,7 +183,7 @@ export class GameEngine {
     //   (this as any).updateDangerMap();
     // }
 
-    console.log(`🧨 Bomb removed from state: ${bombId}`, removed);
+    console.log(`🧨 Bomb removed from state:`, removed);
   }
 
   /**

@@ -45,7 +45,6 @@ export class WallBreakerStrategy extends BaseStrategy {
   > = new Map();
 
   private destroyedChests: Set<string> = new Set(); // Track destroyed chests
-
   // Path-following plan state
   private currentPlan: {
     phase: "MOVING_TO_TARGET";
@@ -61,26 +60,28 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     this.updateBombTracking(gameState);
 
-    if (gameState.currentBot.bombCount <= 0) {
-      this.currentPlan = null; // Clear plan if no bombs
-      return null;
-    }
+    // if (gameState.currentBot.bombCount <= 0) {
+    //   this.currentPlan = null; // Clear plan if no bombs
+    //   return null;
+    // }
 
     // PRIORITY 1: Check if we have an active plan and should continue following it
-    if (this.currentPlan && !this.shouldReplan(gameState)) {
-      console.log(`📋 Continuing existing bomb placement plan...`);
+    console.log(`📋 Continuing existing bomb placement plan...`);
+    const externalPlan = (gameState as any).bombermanCurrentPlan;
 
-      const distanceToTarget = manhattanDistance(
-        currentPos,
-        this.currentPlan.bombPosition
-      );
+    this.currentPlan = externalPlan;
+
+    // Only proceed with plan-following if we actually have a plan and it doesn't need replanning
+    if (this.currentPlan && !this.shouldReplan(gameState)) {
+      const plan = this.currentPlan; // local non-null alias
+      const distanceToTarget = manhattanDistance(currentPos, plan.bombPosition);
 
       // Check if reached target → BOMB
       if (distanceToTarget <= 20) {
         console.log(`✅ Reached bomb placement target! Placing bomb...`);
 
         // CRITICAL: Check if bomb already exists at this position
-        const snappedBombPos = snapToGrid(this.currentPlan.bombPosition);
+        const snappedBombPos = snapToGrid(plan.bombPosition);
         const existingBomb = gameState.map.bombs.find((bomb) => {
           const snappedExistingPos = snapToGrid(bomb.position);
           const distance = manhattanDistance(
@@ -98,7 +99,7 @@ export class WallBreakerStrategy extends BaseStrategy {
 
         // Final escape check
         const canEscape = this.canEscapeAfterBombAdvanced(
-          this.currentPlan.bombPosition,
+          plan.bombPosition,
           gameState
         );
 
@@ -111,14 +112,11 @@ export class WallBreakerStrategy extends BaseStrategy {
         }
 
         // Execute bomb placement
-        const targetChests = this.getTargetChests(
-          this.currentPlan.bombPosition,
-          gameState
-        );
-        this.trackBombPlacement(this.currentPlan.bombPosition, targetChests);
+        const targetChests = this.getTargetChests(plan.bombPosition, gameState);
+        this.trackBombPlacement(plan.bombPosition, targetChests);
 
-        const finalPriority = this.priority + this.currentPlan.targetChests * 5;
-        const targetChestsCount = this.currentPlan.targetChests;
+        const finalPriority = this.priority + plan.targetChests * 5;
+        const targetChestsCount = plan.targetChests;
 
         // Clear plan after execution
         this.currentPlan = null;
@@ -129,23 +127,27 @@ export class WallBreakerStrategy extends BaseStrategy {
         return this.createDecision(
           BotAction.BOMB,
           finalPriority,
-          `Executing planned bomb (${targetChestsCount} chests)`
+          `Executing planned bomb (${targetChestsCount} chests)`,
+          Direction.STOP,
+          plan.bombPosition
         );
       }
 
-      // Continue following path
-      const movePriority =
-        this.priority + this.currentPlan.targetChests * 2 + 10; // Boost priority for committed plan
+      // Continue following path if not at target
+      const movePriority = this.priority + plan.targetChests * 2 + 10; // Boost priority for committed plan
       console.log(
         `🧱 === WallBreakerStrategy EVALUATION END (PLAN MOVE) ===\n`
       );
       return this.createDecision(
         BotAction.MOVE,
         movePriority,
-        `Following bomb placement path (${distanceToTarget}px away)`,
+        `Following bomb placement path (${manhattanDistance(
+          currentPos,
+          plan.bombPosition
+        )}px away)`,
         Direction.STOP, // Will be calculated from path
-        this.currentPlan.bombPosition,
-        this.currentPlan.path
+        plan.bombPosition,
+        plan.path
       );
     }
 
@@ -180,6 +182,11 @@ export class WallBreakerStrategy extends BaseStrategy {
     const bestPosition = this.findOptimalBombPosition(
       gameState,
       availableChests
+    );
+    console.log(
+      "%c🤪 ~ file: wallBreakerStrategy.ts:180 [] -> bestPosition : ",
+      "color: #cf7f8f",
+      bestPosition
     );
 
     if (!bestPosition) {
@@ -226,7 +233,9 @@ export class WallBreakerStrategy extends BaseStrategy {
       return this.createDecision(
         BotAction.BOMB,
         finalPriority,
-        `Immediate bomb (${bestPosition.chestsCount} chests)`
+        `Immediate bomb (${bestPosition.chestsCount} chests)`,
+        Direction.STOP,
+        bestPosition.position
       );
     }
     // Find path to optimal position
@@ -726,6 +735,16 @@ export class WallBreakerStrategy extends BaseStrategy {
           y: snappedBombPos.y + dir.dy * i * 40,
         };
 
+        // Kiểm tra tường cứng (dừng flame)
+        const solidWall = gameState.map.walls.find(
+          (w) =>
+            Math.abs(w.position.x - checkPos.x) < 20 &&
+            Math.abs(w.position.y - checkPos.y) < 20
+        );
+        if (solidWall) {
+          break;
+        }
+
         // Kiểm tra có chest không - FIXED: Snap chest positions to grid for comparison
         const chest = (gameState.map.chests || []).find((c) => {
           const snappedChest = snapToGrid(c.position);
@@ -760,16 +779,6 @@ export class WallBreakerStrategy extends BaseStrategy {
           console.log(
             `      💀 Can hit enemy at (${enemy.position.x}, ${enemy.position.y})`
           );
-        }
-
-        // Kiểm tra tường cứng (dừng flame)
-        const solidWall = gameState.map.walls.find(
-          (w) =>
-            Math.abs(w.position.x - checkPos.x) < 20 &&
-            Math.abs(w.position.y - checkPos.y) < 20
-        );
-        if (solidWall) {
-          break;
         }
       }
     }
