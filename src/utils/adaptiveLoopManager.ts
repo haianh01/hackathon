@@ -1,13 +1,16 @@
 /**
  * Adaptive Loop Manager - Quản lý vòng lặp bot với tần suất linh hoạt
  * Cho phép bot phản ứng nhanh hơn khi cần thiết (ví dụ: gần bom)
+ * Cải tiến: Tần suất được tính toán động dựa trên tốc độ của bot.
  */
 
+import { CELL_SIZE, MOVE_INTERVAL_MS, MOVE_STEP_SIZE } from "./constants";
+
 export enum LoopPriority {
-  EMERGENCY = 100, // Nguy hiểm khẩn cấp (ví dụ: bom sắp nổ)
-  HIGH = 200, // Ưu tiên cao (ví dụ: attack, defense)
-  NORMAL = 500, // Bình thường (explore, collect)
-  LOW = 1000, // Thấp (idle)
+  EMERGENCY,
+  HIGH,
+  NORMAL,
+  LOW,
 }
 
 export interface LoopCallback {
@@ -20,6 +23,14 @@ export class AdaptiveLoopManager {
   private callback: LoopCallback | null = null;
   private isRunning: boolean = false;
   private emergencyTimeout: NodeJS.Timeout | null = null;
+
+  // Các mức tần suất (ms), sẽ được cập nhật động
+  private intervals: Record<LoopPriority, number> = {
+    [LoopPriority.EMERGENCY]: 100, // Cố định, luôn phải nhanh nhất
+    [LoopPriority.HIGH]: 340,
+    [LoopPriority.NORMAL]: 680,
+    [LoopPriority.LOW]: 1200,
+  };
 
   /**
    * Bắt đầu vòng lặp với tần suất mặc định
@@ -36,8 +47,6 @@ export class AdaptiveLoopManager {
 
     // Khởi tạo interval
     this.restartInterval();
-
-    console.log(`🔄 Adaptive loop started with interval: ${initialInterval}ms`);
   }
 
   /**
