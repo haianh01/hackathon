@@ -1,5 +1,15 @@
-import { GameState, Position, Bomb, Direction } from "../types";
-import { manhattanDistance } from "./position";
+import {
+  GameState,
+  Position,
+  Bomb,
+  Direction,
+  EscapePathResult,
+} from "../types";
+import {
+  getDirectionFromPathStep,
+  getDirectionToTarget,
+  manhattanDistance,
+} from "./position";
 import { MinHeap } from "./minHeap";
 import {
   pixelToCellIndex,
@@ -16,6 +26,8 @@ import {
   MOVE_STEP_SIZE,
   MOVE_INTERVAL_MS,
   cellToPixelCenter,
+  canMoveTo,
+  pixelToCellCenter,
 } from "./constants";
 
 /**
@@ -426,12 +438,11 @@ export function computeExplosionCells(
   const maxCellY = Math.floor(gameState.map.height / CELL_SIZE);
 
   for (const dir of directions) {
-    let currentCell = { ...bombCellIndex };
-
     for (let i = 1; i <= (bomb.flameRange || 2); i++) {
-      currentCell = {
-        x: currentCell.x + dir.x,
-        y: currentCell.y + dir.y,
+      // SỬA LỖI: Luôn tính toán từ vị trí gốc của quả bom
+      const currentCell = {
+        x: bombCellIndex.x + dir.x * i,
+        y: bombCellIndex.y + dir.y * i,
       };
 
       // Check bounds first
@@ -472,7 +483,7 @@ export function computeExplosionCells(
  * xét đến tường và rương cản đường bằng cách dùng BFS trên lưới ô.
  * Trả về true nếu tồn tại đường đi đến ô an toàn trước khi bom nổ.
  */
-export function canEscapeFromBomb(
+export function canEscapeFromBomb( // ĐỔI TÊN HÀM
   startPos: Position,
   bomb: Bomb,
   gameState: GameState,
@@ -671,21 +682,15 @@ export function canEscapeFromBomb(
   console.log(`   ❌ NO ESCAPE FOUND after ${visits} visits`);
   return false;
 }
-// Định nghĩa kiểu trả về mới
-type EscapePathResult = {
-  nextStep: Position; // Vị trí pixel của bước đi đầu tiên (cell center)
-  targetCell: Position; // Vị trí cell index của đích an toàn
-  fullSteps: number; // Tổng số bước (cells) đến đích
-  direction: Direction; // Hướng đi chính xác đến nextStep
-} | null;
 
 /**
+ * CẢI TIẾN: Tìm đường thoát hiểm khỏi bom bằng BFS.
  * Sử dụng BFS để tìm đường đi ngắn nhất (bằng số bước) từ startPos
  * đến một ô an toàn mà có thể đến được trước khi bom nổ.
  * * @param startPos Vị trí pixel bắt đầu của bot.
  * @param bomb Thông tin về quả bom.
  * @param gameState Trạng thái hiện tại của trò chơi.
- * @returns {nextStep, targetCell, fullSteps} hoặc null nếu không thể thoát.
+ * @returns {nextStep, target, fullSteps} hoặc null nếu không thể thoát.
  */
 export function findEscapePath(
   startPos: Position,
@@ -697,12 +702,8 @@ export function findEscapePath(
   const startCellIndex = pixelToCellIndex(startPos);
   const unsafe = computeExplosionCells(bomb, gameState, cellSize);
   const startKey = createCellIndexKey(startCellIndex);
+  const startCenter = pixelToCellCenter(startPos);
 
-  // Import hàm mới để sử dụng
-  const { getDirectionFromPathStep } = require("./position");
-
-  // Khởi tạo hàng đợi và Map truy vết (parentMap)
-  // parentMap: 'key_cua_con' -> 'key_cua_cha'
   const queue: { cellIndex: Position; steps: number }[] = [
     { cellIndex: startCellIndex, steps: 0 },
   ];
@@ -714,9 +715,6 @@ export function findEscapePath(
   const pixelsPerMove = botSpeed * MOVE_STEP_SIZE;
   const timeRemaining = bomb.timeRemaining || 5000;
   const pixelsPerSecond = (1000 / moveIntervalMs) * pixelsPerMove;
-
-  // ... (Phần logic kiểm tra an toàn tại chỗ có thể giữ lại hoặc đơn giản hóa) ...
-  // Giả định nếu bot đang đứng trên ô an toàn (không bị ảnh hưởng), nó đã thoát.
 
   // Giới hạn vòng lặp
   const mapCellDims = getMapCellDimensions(
@@ -787,30 +785,34 @@ export function findEscapePath(
         if (arrivalTimeMs <= timeRemaining) {
           // Có thể đến đích an toàn kịp thời
 
-          // Truy vết để tìm bước đi đầu tiên
-          const nextStepCellIndex = reconstructFirstStep(
+          // Truy vết để có được đường đi đầy đủ
+          const fullPathCells = reconstructFullPath(
             parentMap,
             startCellIndex,
             nextCellIndex
           );
-          const nextStepPixelPos = cellToPixelCenter(nextStepCellIndex);
+          console.log("%-> fullPathCells : ", "color: #7a1628", fullPathCells);
+          if (fullPathCells.length < 2) return null; // Cần ít nhất 2 bước (start -> next)
+          // if (
+          //   startPos.x - startCenter.x > 10 ||
+          //   startPos.y - startCenter.y > 10
+          // ) {
+          //   fullPathCells.push(fullPathCells[0]!);
+          // }
+          const nextStepCell = fullPathCells[1]!;
+          const direction = getDirectionToTarget(startCellIndex, nextStepCell);
 
-          // SỬ DỤNG LOGIC MỚI ĐỂ TÌM HƯỚNG ĐI
-          // Logic này đáng tin cậy hơn vì nó dựa trên sự thay đổi của cell index,
-          // không bị ảnh hưởng bởi sự trôi/lệch pixel của bot.
-          const direction = getDirectionFromPathStep(
-            startCellIndex,
-            nextStepCellIndex
-          );
+          // Chuyển đổi toàn bộ đường đi sang pixel (cell centers)
 
           return {
-            nextStep: nextStepPixelPos,
-            targetCell: nextCellIndex,
-            fullSteps: nextSteps,
+            nextStep: fullPathCells[1]!,
+            target: fullPathCells[fullPathCells.length - 1]!,
+            path: fullPathCells,
             direction: direction,
           };
         }
-        // Nếu an toàn nhưng không đến kịp, vẫn tiếp tục tìm kiếm (vì đây là BFS, không cần thêm vào queue nữa)
+        // Nếu ô an toàn nhưng không đến kịp, không làm gì cả.
+        // BFS sẽ tự động tìm các ô an toàn khác gần hơn trong các lần lặp tiếp theo.
       }
 
       // Thêm vào hàng đợi để tìm kiếm các ô xa hơn
@@ -824,48 +826,32 @@ export function findEscapePath(
 // ----------------------------------------------------------------------------------------------------------------------
 
 /**
- * Hàm hỗ trợ: Truy vết ngược từ đích đến START để tìm BƯỚC ĐI ĐẦU TIÊN (index 1).
+ * Hàm hỗ trợ: Truy vết ngược từ đích đến START để có được đường đi đầy đủ.
  * @param parentMap Map chứa quan hệ con -> cha.
  * @param startCellIndex Vị trí cell index bắt đầu.
  * @param endCellIndex Vị trí cell index đích.
- * @returns Vị trí cell index của bước đi đầu tiên sau startCellIndex.
+ * @returns Mảng các cell index của đường đi, từ start đến end.
  */
-function reconstructFirstStep(
+function reconstructFullPath(
   parentMap: Map<string, string>,
   startCellIndex: Position,
   endCellIndex: Position
-): Position {
+): Position[] {
   const startKey = createCellIndexKey(startCellIndex);
   let currentKey = createCellIndexKey(endCellIndex);
-  let pathKeys: string[] = [];
+  const path: Position[] = [endCellIndex];
 
-  // 1. Dựng lại đường đi từ Đích về Gốc
-  while (currentKey !== startKey) {
-    pathKeys.unshift(currentKey);
+  while (currentKey !== startKey && parentMap.has(currentKey)) {
     const parentKey = parentMap.get(currentKey);
-    if (!parentKey) break; // Lỗi, không tìm thấy cha
+    if (!parentKey) break;
+
+    const parts = parentKey.split(",").map(Number);
+    const parentCell = { x: parts[0]!, y: parts[1]! };
+    path.unshift(parentCell);
     currentKey = parentKey;
   }
 
-  // 2. Bước đi đầu tiên là phần tử đầu tiên của đường đi (index 0 của pathKeys)
-  const firstStepKey = pathKeys[0];
-
-  // Nếu không tìm được bước đi đầu tiên, trả về vị trí bắt đầu làm fallback
-  if (!firstStepKey) {
-    return startCellIndex;
-  }
-
-  // Chuyển key trở lại Position với kiểm tra an toàn
-  const parts = firstStepKey.split(",");
-  const px = Number(parts[0]);
-  const py = Number(parts[1]);
-
-  // Nếu giá trị không hợp lệ (undefined -> NaN / not finite), trả về fallback
-  if (!Number.isFinite(px) || !Number.isFinite(py)) {
-    return startCellIndex;
-  }
-
-  return { x: px, y: py };
+  return path;
 }
 
 // Giả định các hàm phụ trợ (pixelToCellIndex, cellToPixelCenter, isBlocked, computeExplosionCells, v.v.)

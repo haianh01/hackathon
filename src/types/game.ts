@@ -191,3 +191,11 @@ export interface BombExplodeEvent {
   id: number; // bomb unique id
   explosionArea: Position[]; // các ô bị ảnh hưởng
 }
+// Định nghĩa kiểu trả về mới
+type EscapePathResult = {
+  nextStep: Position; // Vị trí pixel của bước đi đầu tiên (cell center)
+  target: Position; // Vị trí pixel của đích an toàn (cell center)
+  path: Position[]; // Toàn bộ đường đi (mảng các vị trí pixel)
+  direction: Direction; // Hướng đi chính xác đến nextStep
+} | null;
+export { EscapePathResult };

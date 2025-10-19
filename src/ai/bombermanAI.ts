@@ -367,7 +367,7 @@ export class BombermanAI {
       new DefensiveStrategy(), // 70 - Play defensively
       // new CollectStrategy(), // 60 - Collect items
       new WallBreakerStrategy(), // 50 - Break walls
-      new ExploreStrategy(), // 40 - Explore the map
+      // new ExploreStrategy(), // 40 - Explore the map
       // new SmartNavigationStrategy(), // 30 - Navigate intelligently
     ].sort((a, b) => b.priority - a.priority);
   }

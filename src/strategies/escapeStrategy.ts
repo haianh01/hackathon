@@ -360,7 +360,7 @@ export class EscapeStrategy extends BaseStrategy {
   // enum BotAction { MOVE, STOP }
   // enum Direction { UP, DOWN, LEFT, RIGHT }
   // type BotDecision = { /* ... */ };
-  // type EscapePathResult = { nextStep: Position; targetCell: Position; fullSteps: number; };
+  // type EscapePathResult = { nextStep: Position; target: Position; fullSteps: number; };
 
   public handleEmergency(gameState: GameState): BotDecision | null {
     console.log(`🚨 === EMERGENCY ESCAPE EVALUATION ===`);
@@ -430,21 +430,22 @@ export class EscapeStrategy extends BaseStrategy {
 
     if (escapeResult) {
       // ... (Logic lấy DirectionToTarget giữ nguyên)
-      const { nextStep, targetCell, direction } = escapeResult;
+      const { nextStep, target, direction, path } = escapeResult;
 
       console.log(
-        `🛤️ EMERGENCY PATHFOUND: Found path to safe zone at cell (${targetCell.x}, ${targetCell.y})`
+        `🛤️ EMERGENCY PATHFOUND: Found path to safe zone at cell (${target.x}, ${target.y})`
       );
       console.log(
-        `   Next step (Pixel): (${nextStep.x}, ${nextStep.y}), direction: ${direction}`
+        `   Next step (Pixel): (${nextStep.x}, ${nextStep.y}), direction: ${direction}, path length: ${path.length}`
       );
 
       return this.createDecision(
         BotAction.MOVE,
         this.priority,
         `Escape (BFS) - pathfinding to nearest safe zone`,
-        direction,
-        nextStep
+        direction, // Hướng đi cho bước đầu tiên
+        target, // Đích cuối cùng của toàn bộ đường đi
+        path // Truyền toàn bộ lộ trình cho bot thực thi
       );
     }
 

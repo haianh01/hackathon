@@ -735,16 +735,6 @@ export class WallBreakerStrategy extends BaseStrategy {
           y: snappedBombPos.y + dir.dy * i * 40,
         };
 
-        // Kiểm tra tường cứng (dừng flame)
-        const solidWall = gameState.map.walls.find(
-          (w) =>
-            Math.abs(w.position.x - checkPos.x) < 20 &&
-            Math.abs(w.position.y - checkPos.y) < 20
-        );
-        if (solidWall) {
-          break;
-        }
-
         // Kiểm tra có chest không - FIXED: Snap chest positions to grid for comparison
         const chest = (gameState.map.chests || []).find((c) => {
           const snappedChest = snapToGrid(c.position);
@@ -779,6 +769,16 @@ export class WallBreakerStrategy extends BaseStrategy {
           console.log(
             `      💀 Can hit enemy at (${enemy.position.x}, ${enemy.position.y})`
           );
+        }
+
+        // Kiểm tra tường cứng (dừng flame)
+        const solidWall = gameState.map.walls.find(
+          (w) =>
+            Math.abs(w.position.x - checkPos.x) < 20 &&
+            Math.abs(w.position.y - checkPos.y) < 20
+        );
+        if (solidWall) {
+          break;
         }
       }
     }

@@ -23,7 +23,12 @@ const BOT_LOGIC_INTERVAL = 800; // ms between main bot ticks
 const PATH_FOLLOW_LOOKAHEAD = 5; // how many path waypoints to search ahead
 const BOMB_PLACED_DISTANCE = 5; // px - consider bomb "just placed" if within this distance
 const BOMB_SAFETY_MARGIN = 80; // px extra margin used when computing danger radius
-const PLAYER_REACH_THRESHOLD = CELL_SIZE / 2; // alias for clarity when checking reach
+
+// SỬA LỖI & GIẢI THÍCH:
+// Ngưỡng "đến nơi" nên dựa trên kích thước của bot (30px), không phải kích thước ô (40px).
+// PLAYER_SIZE / 2 = 15px. Bot được coi là đã đến khi tâm của nó cách tâm mục tiêu trong vòng 15px.
+// Điều này đảm bảo bot tiến vào đủ sâu trong ô mục tiêu trước khi dừng lại, giúp các hành động sau đó (như đặt bom) chính xác hơn.
+const PLAYER_REACH_THRESHOLD = CELL_SIZE / 2;
 // After clearing an emergency escape state, wait this long before allowing
 // normal decision logic to override state. This prevents race conditions when
 // server events or danger detection lag behind client-side state.
@@ -304,6 +309,11 @@ export class BomberManBot {
       const REACHED_THRESHOLD = PLAYER_REACH_THRESHOLD;
 
       const isCurrentlySafe = !isPositionInDangerZone(currentBot, gameState);
+      console.log(
+        "%c🤪 ~ file: c:Userslehaihackathonsrc\bombermanBot.ts:306 [] -> isCurrentlySafe : ",
+        "color: #d4df0d",
+        isCurrentlySafe
+      );
 
       // Case 1: Already safe — clear emergency state but allow this tick to continue
       if (isCurrentlySafe) {
@@ -545,29 +555,37 @@ export class BomberManBot {
       return;
     }
 
-    // OPTIMIZATION: Only search next few waypoints instead of entire remaining path
-    // This bounds execution time to O(k) where k=PATH_FOLLOW_LOOKAHEAD, instead of O(n) where n=path.length
-    const LOOK_AHEAD_COUNT = PATH_FOLLOW_LOOKAHEAD;
-    const searchEndIndex = Math.min(
-      this.currentPathIndex + LOOK_AHEAD_COUNT,
-      this.currentPath.length
-    );
+    // SỬA LỖI: Logic tìm waypoint gần nhất quá "tham lam", có thể nhảy cóc các bước.
+    // Thay vào đó, chỉ nên quyết định giữa waypoint hiện tại và waypoint kế tiếp.
+    // Điều này đảm bảo bot đi tuần tự qua từng bước của path.
+    const currentIndex = this.currentPathIndex;
+    const nextIndex = Math.min(currentIndex + 1, this.currentPath.length - 1);
 
-    // Find closest point in limited lookahead window
-    for (let i = this.currentPathIndex; i < searchEndIndex; i++) {
-      const pathPos = this.currentPath[i];
-      if (!pathPos) continue;
+    const currentWaypoint = this.currentPath[currentIndex];
+    const nextWaypointCandidate = this.currentPath[nextIndex];
 
-      const dist = Math.hypot(
-        currentPos.x - pathPos.x,
-        currentPos.y - pathPos.y
+    if (
+      currentWaypoint &&
+      nextWaypointCandidate &&
+      currentIndex !== nextIndex
+    ) {
+      const distToCurrent = Math.hypot(
+        currentPos.x - currentWaypoint.x,
+        currentPos.y - currentWaypoint.y
+      );
+      const distToNext = Math.hypot(
+        currentPos.x - nextWaypointCandidate.x,
+        currentPos.y - nextWaypointCandidate.y
       );
 
-      if (dist < minDist) {
-        minDist = dist;
-        closestIndex = i;
+      // Nếu bot đã ở gần waypoint tiếp theo hơn là waypoint hiện tại,
+      // thì ta tiến index lên.
+      if (distToNext < distToCurrent) {
+        closestIndex = nextIndex;
       }
     }
+    // Nếu không, closestIndex vẫn là this.currentPathIndex, bot sẽ tiếp tục
+    // di chuyển về waypoint hiện tại.
 
     // Update to closest index
     this.currentPathIndex = closestIndex;
@@ -583,10 +601,6 @@ export class BomberManBot {
     }
 
     // Get next waypoint in path
-    const nextIndex = Math.min(
-      this.currentPathIndex + 1,
-      this.currentPath.length - 1
-    );
     const nextWaypoint = this.currentPath[nextIndex];
 
     if (!nextWaypoint) {
@@ -594,8 +608,13 @@ export class BomberManBot {
       this.clearPath();
       return;
     }
-
+    console.log(
+      "🚶 Following path...",
+      `CurrentPos: (${currentPos.x}, ${currentPos.y}), NextWaypoint: (${nextWaypoint.x}, ${nextWaypoint.y}),  decision.direction : ${decision.direction}`
+    );
     // Calculate direction to next waypoint
+    // SỬA LỖI: Ưu tiên hướng đi đã được tính toán sẵn từ pathfinding (decision.direction).
+    // Chỉ tính toán lại bằng getDirectionToTarget nếu không có hướng nào được cung cấp.
     const direction = getDirectionToTarget(currentPos, nextWaypoint);
 
     console.log(
@@ -637,20 +656,24 @@ export class BomberManBot {
       this.clearPath();
       return;
     }
-
+    console.log(
+      "🚶 Executing next step towards emergency target...",
+      decision.direction
+    );
     // 2. Tính toán lại hướng (để chống lại drift)
     const direction = getDirectionToTarget(currentPos, nextWaypoint);
 
     // Distance left for logging/debugging
+    // SỬA LỖI: Tính khoảng cách trực tiếp, không trừ đi các giá trị tùy tiện.
     const distToTarget = Math.hypot(
-      currentPos.x - nextWaypoint.x - 20,
-      currentPos.y - nextWaypoint.y - 20
+      currentPos.x - nextWaypoint.x,
+      currentPos.y - nextWaypoint.y
     );
 
     console.log(
       `🎯 Executing Next Step: ${direction} to (${nextWaypoint.x}, ${
         nextWaypoint.y
-      }). Dist remaining: ${distToTarget.toFixed(2)}px — reason: ${
+      }). Dist remaining: ${distToTarget.toFixed(1)}px — reason: ${
         decision.reason
       } (priority: ${decision.priority})`
     );
