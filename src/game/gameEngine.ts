@@ -138,7 +138,7 @@ export class GameEngine {
    * Safe: checks for structure existence and attempts to update any danger maps.
    * @param bombIdentifier Can be a Position object or an object with an `id` property.
    */
-  public removeBombRealtime(bombIdentifier: Position | { id: any }): void {
+  public removeBombRealtime(bombIdentifier: Position | { id: string }): void {
     if (!bombIdentifier) return;
 
     // Defensive checks for game state structure
@@ -155,15 +155,6 @@ export class GameEngine {
 
     if ("id" in bombIdentifier) {
       idx = bombs.findIndex((b) => b.id === bombIdentifier.id);
-    } else if ("x" in bombIdentifier && "y" in bombIdentifier) {
-      // Fallback to position for predicted bombs or events without ID
-      idx = bombs.findIndex((b) => {
-        const dist = Math.hypot(
-          b.position.x - bombIdentifier.x,
-          b.position.y - bombIdentifier.y
-        );
-        return dist < 10; // Use a small threshold for position matching
-      });
     }
 
     if (idx === -1) {
@@ -172,20 +163,6 @@ export class GameEngine {
     }
 
     const [removed] = bombs.splice(idx, 1);
-    // try {
-    //   if ((this as any).bombsById && (this as any).bombsById[bombId]) {
-    //     delete (this as any).bombsById[bombId];
-    //   }
-    // } catch (e) {
-    //   // ignore if not present
-    // }
-
-    // Recompute danger zones / caches if engine provides helpers
-    // if (typeof (this as any).recalculateDangerZones === "function") {
-    //   (this as any).recalculateDangerZones();
-    // } else if (typeof (this as any).updateDangerMap === "function") {
-    //   (this as any).updateDangerMap();
-    // }
 
     console.log(`🧨 Bomb removed from state:`, removed);
   }

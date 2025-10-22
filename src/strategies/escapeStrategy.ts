@@ -5,7 +5,6 @@ import {
   BotAction,
   Direction,
   Position,
-  Bomb,
 } from "../types";
 import {
   getSafeAdjacentPositions,
@@ -20,7 +19,6 @@ import {
 import {
   // Use UNIFIED collision system from constants
   canMoveTo,
-  PLAYER_SIZE,
 } from "../utils/constants";
 /**
  * Escape strategy for when the bot is in a danger zone.

@@ -1,7 +1,11 @@
 import { GameState, Position, Bomb, Direction } from "../types";
 import { getPositionInDirection, getPositionsInLine } from "./position";
 import { computeExplosionCells } from "./pathfinding";
-import { pixelToCellIndex, createCellIndexKey } from "./coordinates";
+import {
+  pixelToCellIndex,
+  createCellIndexKey,
+  cellToPixelCorner,
+} from "./coordinates";
 import {
   CELL_SIZE,
   CHEST_SIZE,
@@ -107,7 +111,7 @@ export function isPositionSafe(
 }
 
 /**
- * OPTIMIZED: Check danger zone with caching
+ * OPTIMIZED: Check danger zone with caching AND pixel-perfect distance check
  * CONFLICT FIX: This must align with BombermanBot's threat detection
  */
 export function isPositionInDangerZone(
@@ -120,8 +124,6 @@ export function isPositionInDangerZone(
   }
 
   const cellIndex = pixelToCell(position);
-  console.log("%c🤪 ~  cellIndex : ", "color: #d865ea", cellIndex);
-
   const cellKey = createCellIndexKey(cellIndex);
 
   // Early exit if no bombs
@@ -129,7 +131,7 @@ export function isPositionInDangerZone(
     return false;
   }
 
-  // Use cached explosion cells
+  // Check each bomb
   for (const bomb of gameState.map.bombs) {
     const unsafeCells = getCachedExplosionCells(bomb, gameState);
 
@@ -465,4 +467,49 @@ export function getDistance(pos1: Position, pos2: Position): number {
  */
 export function clearExplosionCache(): void {
   explosionCache.clear();
+}
+// Giả định hàm này kiểm tra nếu bot (có kích thước BOT_SIZE) nằm hoàn toàn trong ô lưới (cellIndex)
+export function isBotFullyInCell(
+  currentPos: Position,
+  cellIndex: Position
+): boolean {
+  // Lấy tọa độ góc trên bên trái của ô lưới
+  const cellCorner = cellToPixelCorner(cellIndex);
+
+  // Lấy tọa độ góc trên bên trái của bot
+  const botTopLeft = {
+    x: currentPos.x - PLAYER_SIZE / 2,
+    y: currentPos.y - PLAYER_SIZE / 2,
+  };
+
+  // Kiểm tra nếu botTopLeft nằm trong ô lưới
+  const isTopLeftIn =
+    botTopLeft.x >= cellCorner.x &&
+    botTopLeft.x < cellCorner.x + CELL_SIZE &&
+    botTopLeft.y >= cellCorner.y &&
+    botTopLeft.y < cellCorner.y + CELL_SIZE;
+
+  // Kiểm tra nếu botBottomRight nằm trong ô lưới
+  const botBottomRight = {
+    x: currentPos.x + PLAYER_SIZE / 2,
+    y: currentPos.y + PLAYER_SIZE / 2,
+  };
+
+  const isBottomRightIn =
+    botBottomRight.x > cellCorner.x &&
+    botBottomRight.x <= cellCorner.x + CELL_SIZE &&
+    botBottomRight.y > cellCorner.y &&
+    botBottomRight.y <= cellCorner.y + CELL_SIZE;
+
+  // Bot nằm hoàn toàn trong ô nếu cả 4 góc của bot đều nằm trong ô đó.
+  // Vì chúng ta đang kiểm tra từ tâm, việc botTopLeft nằm trong
+  // và botBottomRight nằm trong là đủ, nếu kích thước bot nhỏ hơn cell.
+  // Tuy nhiên, để đảm bảo 'hoàn toàn', ta có thể đơn giản hóa:
+  // Nếu (tọa độ min của bot > tọa độ min của cell) VÀ (tọa độ max của bot < tọa độ max của cell)
+  return (
+    botTopLeft.x >= cellCorner.x &&
+    botBottomRight.x <= cellCorner.x + CELL_SIZE &&
+    botTopLeft.y >= cellCorner.y &&
+    botBottomRight.y <= cellCorner.y + CELL_SIZE
+  );
 }

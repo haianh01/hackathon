@@ -5,7 +5,7 @@ import {
   Direction,
   EscapePathResult,
 } from "../types";
-import { getDirectionToTarget, manhattanDistance } from "./position";
+import { getDirectionToTarget } from "./position";
 import { MinHeap } from "./minHeap";
 import {
   pixelToCellIndex,
@@ -18,9 +18,10 @@ import {
   WALL_SIZE,
   isWithinCellBounds,
   CELL_SIZE,
+  cellToPixelCenter,
+  pixelToCell,
   MOVE_STEP_SIZE,
   MOVE_INTERVAL_MS,
-  cellToPixelCenter,
 } from "./constants";
 
 const PATHFINDING_CONFIG = {
@@ -346,13 +347,13 @@ export class Pathfinding {
       const cellKey = createCellIndexKey(cellIndex);
 
       for (const bomb of gameState.map.bombs) {
-        const bombCell = pixelToCellIndex(bomb.position);
+        const bombCell = pixelToCell(bomb.position);
         const bombKey = createCellIndexKey(bombCell);
 
         if (cellKey === bombKey) {
           // Check if this is allowed own bomb
           if (options?.allowOwnBomb) {
-            const ownBombCell = pixelToCellIndex(options.allowOwnBomb);
+            const ownBombCell = pixelToCell(options.allowOwnBomb);
             const ownBombKey = createCellIndexKey(ownBombCell);
 
             if (bombKey === ownBombKey) {
@@ -392,7 +393,7 @@ export function computeExplosionCells(
   bomb: Bomb,
   gameState: GameState
 ): Set<string> {
-  const bombCell = pixelToCellIndex(bomb.position);
+  const bombCell = pixelToCell(bomb.position);
   const cacheKey = `${bombCell.x},${bombCell.y},${bomb.flameRange}`;
 
   // Check cache
@@ -410,12 +411,12 @@ export function computeExplosionCells(
   const destructibles = new Set<string>();
 
   for (const wall of gameState.map.walls) {
-    const cellIdx = pixelToCellIndex(wall.position);
+    const cellIdx = pixelToCell(wall.position);
     solidWalls.add(createCellIndexKey(cellIdx));
   }
 
   for (const chest of gameState.map.chests || []) {
-    const cellIdx = pixelToCellIndex(chest.position);
+    const cellIdx = pixelToCell(chest.position);
     destructibles.add(createCellIndexKey(cellIdx));
   }
 
@@ -481,19 +482,12 @@ export function canEscapeFromBomb( // ĐỔI TÊN HÀM
   bomb: Bomb,
   gameState: GameState
 ): boolean {
-  const startCell = pixelToCellIndex(startPos);
+  const startCell = pixelToCell(startPos);
   const unsafe = computeExplosionCells(bomb, gameState);
   const startKey = createCellIndexKey(startCell);
 
-  // Quick check: if already safe
   if (!unsafe.has(startKey)) {
-    const pixelDist = manhattanDistance(startPos, bomb.position);
-    const dangerRadius =
-      bomb.flameRange * CELL_SIZE + PATHFINDING_CONFIG.SAFETY_MARGIN;
-
-    if (pixelDist > dangerRadius) {
-      return true;
-    }
+    return true;
   }
 
   // BFS to find escape
@@ -578,24 +572,27 @@ export function findEscapePath(
   bomb: Bomb,
   gameState: GameState
 ): EscapePathResult {
-  const startCell = pixelToCellIndex(startPos);
+  const startCell = pixelToCell(startPos);
+  console.log(
+    "%c🤪 ~ file: pathfinding.ts:575 [] -> startCell : ",
+    "color: #316a35",
+    startCell
+  );
 
   const unsafe = computeExplosionCells(bomb, gameState);
-  const startKey = createCellIndexKey(startCell);
-
-  // ✅ FIX: ALWAYS check if we need to move away from bomb
-  // Don't blindly return "already safe" - check actual pixel distance too!
-  const pixelDist = Math.hypot(
-    startPos.x - bomb.position.x,
-    startPos.y - bomb.position.y
+  console.log(
+    "%c🤪 ~ file: pathfinding.ts:582 [] -> unsafe : ",
+    "color: #865637",
+    unsafe
   );
-  const dangerRadius =
-    bomb.flameRange * CELL_SIZE + PATHFINDING_CONFIG.SAFETY_MARGIN;
+  const startKey = createCellIndexKey(startCell);
+  console.log(
+    "%c🤪 ~ file: pathfinding.ts:583 [] -> startKey : ",
+    "color: #3ce4c4",
+    startKey
+  );
 
-  // Only return "safe" if BOTH conditions are true:
-  // 1. Not in unsafe cell AND
-  // 2. Far enough from bomb in pixel distance
-  if (!unsafe.has(startKey) && pixelDist > dangerRadius) {
+  if (!unsafe.has(startKey)) {
     return {
       nextStep: startPos,
       target: startPos,
@@ -659,13 +656,8 @@ export function findEscapePath(
       parentMap.set(key, createCellIndexKey(node.cell));
 
       const nextSteps = node.steps + 1;
-      const targetCenter = cellToPixelCenter(nextCell);
-      const distancePx = Math.hypot(
-        targetCenter.x - startPos.x,
-        targetCenter.y - startPos.y
-      );
+      const distancePx = nextSteps * CELL_SIZE; // Giống như canEscapeFromBomb
       const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
-
       // Skip unsafe cells that can't be passed in time
       if (unsafe.has(key) && arrivalTimeMs >= timeRemaining) {
         continue;
@@ -736,53 +728,6 @@ function reconstructFullPath(
  */
 export function predictEnemyPosition(enemy: any, steps: number): Position {
   return { ...enemy.position };
-}
-
-/**
- * Calculate position score for strategic placement
- */
-export function calculatePositionScore(
-  position: Position,
-  gameState: GameState
-): number {
-  let score = 0;
-
-  // Center preference
-  const centerX = gameState.map.width / 2;
-  const centerY = gameState.map.height / 2;
-  const distFromCenter = manhattanDistance(position, {
-    x: centerX,
-    y: centerY,
-  });
-  score += Math.max(0, 100 - distFromCenter * 5);
-
-  // Item proximity bonus
-  for (const item of gameState.map.items) {
-    const dist = manhattanDistance(position, item.position);
-    if (dist <= 3 * CELL_SIZE) {
-      score += Math.max(0, 50 - (dist / CELL_SIZE) * 10);
-    }
-  }
-
-  // Enemy proximity penalty
-  for (const enemy of gameState.enemies) {
-    if (!enemy.isAlive) continue;
-    const dist = manhattanDistance(position, enemy.position);
-    if (dist <= 4 * CELL_SIZE) {
-      score -= Math.max(0, 60 - (dist / CELL_SIZE) * 15);
-    }
-  }
-
-  // Bomb proximity penalty
-  for (const bomb of gameState.map.bombs) {
-    const dist = manhattanDistance(position, bomb.position);
-    const dangerDist = (bomb.flameRange + 1) * CELL_SIZE;
-    if (dist <= dangerDist) {
-      score -= Math.max(0, 100 - (dist / CELL_SIZE) * 20);
-    }
-  }
-
-  return score;
 }
 
 /**

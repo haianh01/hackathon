@@ -161,14 +161,23 @@ export function isAtPosition(
   const botCenter = botTopLeftToCenter(botTopLeft);
 
   // Calculate distance between centers
-  const distance =
-    Math.abs(botCenter.x - targetCenter.x) +
-    Math.abs(botCenter.y - targetCenter.y);
+  const distance = Math.hypot(
+    botCenter.x - targetCenter.x,
+    botCenter.y - targetCenter.y
+  );
+
+  console.log(
+    "%c🤪 ~ file: coordinates.ts:164 [] -> distance : ",
+    "color: #7d80b4",
+    distance,
+    targetCenter,
+    botCenter
+  );
 
   // Add margin for server sync tolerance
-  const effectiveThreshold = threshold + COORDINATE_CONFIG.REACH_MARGIN_PIXELS;
-
-  return distance <= effectiveThreshold;
+  // const effectiveThreshold = threshold + COORDINATE_CONFIG.REACH_MARGIN_PIXELS;
+  const effectiveThreshold = threshold;
+  return distance >= effectiveThreshold + 28;
 }
 /**
  * ✅ FIXED: Calculate distance between two positions

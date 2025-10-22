@@ -18,6 +18,17 @@ export const COLLISION_TOLERANCE = 5; // Minimum collision threshold
 export const PLAYER_COLLISION_THRESHOLD = 25; // Player-to-player collision
 export const EDGE_SAFETY_MARGIN = 20; // Safety margin from map edges
 
+// === BOMB DANGER CONSTANTS ===
+/**
+ * CRITICAL: Safety margin for bomb danger calculations
+ * This ensures bot stays far enough from explosion radius
+ *
+ * Formula: dangerRadius = flameRange * CELL_SIZE + BOMB_SAFETY_MARGIN
+ * Example: flameRange=2 → 2*40 + 80 = 160px safe distance
+ */
+export const BOMB_SAFETY_MARGIN = 80; // px - Must match bombermanBot.ts CONFIG
+export const BOMB_PLACED_DISTANCE = 5; // px - Distance to detect if bot just placed bomb
+
 // === MOVEMENT CONSTANTS ===
 export const MOVE_STEP_SIZE = 1; // Server moves 1px per step
 export const MOVE_INTERVAL_MS = 17; // Default movement interval

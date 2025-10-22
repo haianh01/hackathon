@@ -293,7 +293,7 @@
         const MIN_LOGIC_DELAY = 50; // Minimum delay between logic ticks
 
         // Game state
-        let botPosition = { x: 42, y: 42 }; // Centered in cell (1,1)
+        let botPosition = { x: 119, y: 120 }; // Centered in cell (1,1)
         let targetCell = null;
         let path = [];
         let currentWaypointIndex = 0;
@@ -311,7 +311,7 @@
 
         // Walls (simple maze)
         const walls = [
-            { x: 3, y: 1 }, { x: 3, y: 2 }, { x: 3, y: 3 },
+            { x: 3, y: 1 }, { x: 3, y: 2 },
             { x: 7, y: 5 }, { x: 7, y: 6 }, { x: 7, y: 7 },
             { x: 10, y: 3 }, { x: 11, y: 3 }, { x: 12, y: 3 },
         ];
@@ -565,14 +565,17 @@
                     // Remove first waypoint if it's the start position
                     if (path.length > 1) {
                         const firstWaypoint = path[0];
+                        console.log('%c🤪 ~ file: index.html:567 [] -> firstWaypoint : ', 'color: #9883d4', firstWaypoint);
                         const startCenter = cellToPixelCenter(startCell);
+                        console.log('%c🤪 ~ file: index.html:569 [] -> startCenter : ', 'color: #124694', startCenter);
                         const dist = Math.hypot(
                             firstWaypoint.x - startCenter.x,
                             firstWaypoint.y - startCenter.y
                         );
-                        if (dist < 5) {
-                            path.shift(); // Remove duplicate start
-                        }
+                        console.log('%c🤪 ~ file: index.html:569 [] -> dist : ', 'color: #8f5f61', dist);
+                        // if (dist < 4) {
+                        //     path.shift(); // Remove duplicate start
+                        // }
                     }
                     return path;
                 }
@@ -737,7 +740,6 @@
                     visited.add(key);
                     parentMap.set(key, `${node.cell.x},${node.cell.y}`);
 
-                    const nextSteps = node.steps + 1;
                     const targetCenter = cellToPixelCenter(nextCell);
 
                     // Calculate distance from START CENTER (not top-left)
@@ -748,38 +750,41 @@
                     // const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
 
                     // Skip unsafe cells that can't be passed in time
-                    // if (unsafe.has(key) && arrivalTimeMs >= timeRemaining) {
-                    //     continue;
-                    // }
+                    const nextSteps = node.steps + 1;
+                    const distancePx = nextSteps * CELL_SIZE; // Giống như canEscapeFromBomb
+                    const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
+                    if (unsafe.has(key) && arrivalTimeMs >= timeRemaining) {
+                        continue;
+                    }
 
                     // Found safe cell reachable in time!
                     if (!unsafe.has(key)) {
                         // Double-check pixel distance from bomb (important!)
-                        // const distFromBomb = Math.hypot(
-                        //     targetCenter.x - bomb.x,
-                        //     targetCenter.y - bomb.y
-                        // );
 
-                        // if (distFromBomb <= dangerRadius) {
-                        //     // Still in danger, skip this cell
-                        //     continue;
-                        // }
+
 
                         addLog(`✅ Found safe cell at (${nextCell.x}, ${nextCell.y}), arrival:`, 'debug');
 
                         // Reconstruct path (cell indices)
-                        const fullPath = reconstructEscapePath(parentMap, startCell, nextCell);
 
-                        // Convert ALL cells to pixel centers (including start)
-                        const pixelPath = fullPath.map(cell => cellToPixelCenter(cell));
+                        const fullPath = reconstructEscapePath(parentMap, startCell, nextCell);
+                        if (fullPath.length === 0) return null;
+
+                        const pixelPath = [startPos];
+                        for (let i = 1; i < fullPath.length; i++) {
+                            pixelPath.push(cellToPixelCenter(fullPath[i]));
+                        }
+
+                        const nextTarget = pixelPath[1];
+                        const direction = getDirectionToTarget(startPos, nextTarget);
+
 
                         // Log the constructed path for debugging
                         addLog(`📍 Path cells: ${fullPath.map(c => `(${c.x},${c.y})`).join(' -> ')}`, 'debug');
                         addLog(`📍 Path pixels: ${pixelPath.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' -> ')}`, 'debug');
 
                         // Next step is the second waypoint (first is current position)
-                        const nextTarget = pixelPath.length > 1 ? pixelPath[1] : pixelPath[0];
-                        const direction = getDirectionToTarget(startPos, nextTarget);
+
 
                         addLog(`🛤️ Escape path: ${pixelPath.length} steps, direction: ${direction}`, 'debug');
 
@@ -1309,7 +1314,7 @@
             targetCell = { x: cellX, y: cellY };
             addLog(`🎯 Target set to cell (${cellX}, ${cellY})`, 'debug');
 
-            const startCell = pixelToCellIndex(botPosition);
+            const startCell = pixelToCell(botPosition);
             addLog(`📍 Bot is at cell (${startCell.x}, ${startCell.y})`, 'debug');
 
             path = findPath(startCell, targetCell);
@@ -1371,7 +1376,7 @@
             isPaused = false;
             tickCount = 0;
             currentWaypointIndex = 0;
-            botPosition = { x: 42, y: 42 };
+            botPosition = { x: 119, y: 120 };
             targetCell = null;
             path = [];
             bombs = [];
