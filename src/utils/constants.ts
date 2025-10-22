@@ -10,7 +10,7 @@ export const HALF_CELL = CELL_SIZE / 2; // 20px - for center calculations
 // === OBJECT SIZE CONSTANTS ===
 export const WALL_SIZE = 40; // Wall object size in pixels
 export const CHEST_SIZE = 40; // Chest object size in pixels
-export const PLAYER_SIZE = 30; // Player/bot collision size
+export const PLAYER_SIZE = 35; // Player/bot collision size
 export const ITEM_SIZE = 20; // Item pickup size
 
 // === COLLISION CONSTANTS ===
@@ -19,7 +19,7 @@ export const PLAYER_COLLISION_THRESHOLD = 25; // Player-to-player collision
 export const EDGE_SAFETY_MARGIN = 20; // Safety margin from map edges
 
 // === MOVEMENT CONSTANTS ===
-export const MOVE_STEP_SIZE = 3; // Server moves 3px per step
+export const MOVE_STEP_SIZE = 1; // Server moves 1px per step
 export const MOVE_INTERVAL_MS = 17; // Default movement interval
 
 // === COORDINATE CONVERSION UTILITIES ===
@@ -42,16 +42,6 @@ export function cellToPixel(cellIndex: Position): Position {
   return {
     x: cellIndex.x * CELL_SIZE + HALF_CELL,
     y: cellIndex.y * CELL_SIZE + HALF_CELL,
-  };
-}
-
-/**
- * Convert cell indices to pixel coordinates (top-left corner of cell)
- */
-export function cellToPixelCorner(cellIndex: Position): Position {
-  return {
-    x: cellIndex.x * CELL_SIZE,
-    y: cellIndex.y * CELL_SIZE,
   };
 }
 

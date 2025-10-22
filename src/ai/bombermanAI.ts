@@ -44,92 +44,11 @@ export class BombermanAI {
   }
 
   /**
-   * Check if we need immediate escape due to recent bomb placement
-   */
-  private needsImmediateEscape(gameState: GameState): boolean {
-    if (!this.justPlacedBomb || !this.bombPlacementPosition) {
-      return false;
-    }
-
-    const elapsedTime = Date.now() - this.bombPlacementTime;
-
-    // TIMEOUT: Max 3 seconds emergency mode
-    if (elapsedTime > 3000) {
-      this.justPlacedBomb = false;
-      this.bombPlacementPosition = null;
-      console.log(`✅ Emergency escape timeout (${elapsedTime}ms elapsed)`);
-      return false;
-    }
-
-    // Check if bomb still exists on map
-    const bombStillExists = gameState.map.bombs.some(
-      (b) =>
-        Math.abs(b.position.x - this.bombPlacementPosition!.x) < 20 &&
-        Math.abs(b.position.y - this.bombPlacementPosition!.y) < 20
-    );
-
-    if (!bombStillExists && elapsedTime > 500) {
-      // Bomb already exploded, safe now
-      this.justPlacedBomb = false;
-      this.bombPlacementPosition = null;
-      console.log(
-        `✅ Bomb already exploded after ${elapsedTime}ms, ending emergency mode`
-      );
-      return false;
-    }
-
-    // Check if we're still close to the bomb placement position
-    const currentPos = gameState.currentBot.position;
-    const distance =
-      Math.abs(currentPos.x - this.bombPlacementPosition.x) +
-      Math.abs(currentPos.y - this.bombPlacementPosition.y);
-
-    const flameRange = gameState.currentBot.flameRange || 2;
-    const dangerRadius = (flameRange + 1.5) * CELL_SIZE; // Add 1.5 cell safety margin
-
-    const isStillInDanger = distance < dangerRadius;
-
-    // EARLY EXIT: If escaped far enough (after at least 500ms to avoid flicker)
-    if (!isStillInDanger && elapsedTime > 500) {
-      this.justPlacedBomb = false;
-      this.bombPlacementPosition = null;
-      console.log(
-        `✅ Escaped to safety! Distance: ${distance}px (safe at ${dangerRadius}px), ending emergency mode after ${elapsedTime}ms`
-      );
-      return false;
-    }
-
-    // Still in danger
-    if (isStillInDanger) {
-      console.log(
-        `⚠️ Still in danger: distance ${distance}px < ${dangerRadius}px (elapsed: ${elapsedTime}ms)`
-      );
-    }
-
-    return isStillInDanger;
-  }
-
-  /**
    * Makes a decision for the bot based on the current game state.
    * @param gameState The current state of the game.
    * @returns The decision for the bot to execute.
    */
   public makeDecision(gameState: GameState): BotDecision {
-    // if (this.needsImmediateEscape(gameState)) {
-    //   console.log(`🚨 IMMEDIATE ESCAPE NEEDED after bomb placement!`);
-
-    //   const escapeStrategy = this.strategies.find(
-    //     (s) => s.name === "Escape"
-    //   ) as EscapeStrategy;
-    //   if (escapeStrategy) {
-    //     const emergencyDecision = escapeStrategy.handleEmergency(gameState);
-    //     if (emergencyDecision) {
-    //       console.log(`🏃 EMERGENCY ESCAPE: ${emergencyDecision.reason}`);
-    //       return emergencyDecision;
-    //     }
-    //   }
-    // }
-
     // DYNAMIC PRIORITY ADJUSTMENT based on game phase
     // const analysis = GamePhaseAnalyzer.getStrategyAdjustment(gameState);
     // console.log(`\n🎮 === GAME PHASE ANALYSIS ===`);

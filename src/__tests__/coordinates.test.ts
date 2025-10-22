@@ -16,7 +16,7 @@ describe("Coordinates System", () => {
   describe("Constants", () => {
     it("should have correct constants", () => {
       expect(CELL_SIZE).toBe(40);
-      expect(MOVE_STEP_SIZE).toBe(3);
+      expect(MOVE_STEP_SIZE).toBe(1);
     });
   });
 

@@ -1,5 +1,6 @@
 import { Position, Direction } from "../types";
 import { CELL_SIZE, MOVE_STEP_SIZE } from "./constants";
+import { botTopLeftToCenter, COORDINATE_CONFIG } from "./coordinates";
 
 /**
  * Tính khoảng cách Manhattan giữa hai điểm
@@ -23,36 +24,26 @@ export function euclideanDistance(pos1: Position, pos2: Position): number {
 export function positionsEqual(pos1: Position, pos2: Position): boolean {
   return pos1.x === pos2.x && pos1.y === pos2.y;
 }
-
 /**
- * Lấy vị trí mới sau khi di chuyển theo hướng
- * Default step size is one cell (40px) for pathfinding
+ * Get position after moving in a direction
  */
 export function getPositionInDirection(
   position: Position,
   direction: Direction,
-  steps: number = CELL_SIZE // Default to one cell for pathfinding
+  distance: number = COORDINATE_CONFIG.CELL_SIZE
 ): Position {
-  const newPos = { ...position };
-
   switch (direction) {
     case Direction.UP:
-      newPos.y -= steps;
-      break;
+      return { x: position.x, y: position.y - distance };
     case Direction.DOWN:
-      newPos.y += steps;
-      break;
+      return { x: position.x, y: position.y + distance };
     case Direction.LEFT:
-      newPos.x -= steps;
-      break;
+      return { x: position.x - distance, y: position.y };
     case Direction.RIGHT:
-      newPos.x += steps;
-      break;
-    case Direction.STOP:
-      break;
+      return { x: position.x + distance, y: position.y };
+    default:
+      return position;
   }
-
-  return newPos;
 }
 
 /**
@@ -62,7 +53,7 @@ export function getPositionInDirection(
 export function getPositionInDirectionSmallStep(
   position: Position,
   direction: Direction,
-  steps: number = MOVE_STEP_SIZE // Server moves 3px per step
+  steps: number = MOVE_STEP_SIZE // Server moves 1px per step
 ): Position {
   return getPositionInDirection(position, direction, steps);
 }
@@ -93,21 +84,35 @@ export function isPositionInBounds(
 }
 
 /**
- * Lấy hướng để đi từ vị trí hiện tại đến vị trí đích
+ * ✅ FIXED: Calculate direction from current position to target
+ * Always uses CENTER to CENTER comparison
+ *
+ * @param botTopLeft - Bot's current position (top-left)
+ * @param targetCenter - Target position (center)
+ * @returns Direction to move
  */
-export function getDirectionToTarget(from: Position, to: Position): Direction {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
+export function getDirectionToTarget(
+  botTopLeft: Position,
+  targetCenter: Position
+): Direction {
+  // Convert bot to center for consistent comparison
+  const botCenter = botTopLeftToCenter(botTopLeft);
 
-  // Ưu tiên di chuyển theo trục có khoảng cách lớn hơn
-  if (Math.abs(dx) > Math.abs(dy)) {
-    return dx > 0 ? Direction.RIGHT : Direction.LEFT;
-  } else if (Math.abs(dy) > Math.abs(dx)) {
-    return dy > 0 ? Direction.DOWN : Direction.UP;
+  const dx = targetCenter.x - botCenter.x;
+  const dy = targetCenter.y - botCenter.y;
+
+  // If very close to target, consider it reached
+  const MIN_DISTANCE = 2; // pixels
+  if (Math.abs(dx) < MIN_DISTANCE && Math.abs(dy) < MIN_DISTANCE) {
+    return Direction.STOP;
   }
 
-  // Nếu bằng nhau, ưu tiên di chuyển theo trục X
-  return dx > 0 ? Direction.RIGHT : Direction.LEFT;
+  // Prioritize larger axis for cleaner movement
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? Direction.RIGHT : Direction.LEFT;
+  } else {
+    return dy > 0 ? Direction.DOWN : Direction.UP;
+  }
 }
 
 /**

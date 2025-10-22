@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bomberman Bot Movement - Visual Example</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+
+        .panels {
+            display: grid;
+            grid-template-columns: 600px 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .panel {
+            background: #2a2a2a;
+            border: 2px solid #444;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .panel h2 {
+            margin-bottom: 15px;
+            color: #FFC107;
+            font-size: 18px;
+        }
+
+        #canvas {
+            border: 2px solid #4CAF50;
+            background: #1a1a1a;
+            display: block;
+            cursor: pointer;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+
+        .log {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 4px 8px;
+            border-radius: 3px;
+        }
+
+        .log-tick {
+            background: #1e3a5f;
+            color: #64B5F6;
+            font-weight: bold;
+        }
+
+        .log-move {
+            background: #2e4a2e;
+            color: #81C784;
+        }
+
+        .log-reached {
+            background: #4a2e4a;
+            color: #CE93D8;
+        }
+
+        .log-debug {
+            background: #3a2e1e;
+            color: #FFB74D;
+        }
+
+        .log-error {
+            background: #4a1e1e;
+            color: #EF5350;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        .stat-label {
+            color: #999;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            color: #4CAF50;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .legend {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+            padding: 10px;
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid #666;
+        }
+
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .speed-control input {
+            flex: 1;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🤖 Bomberman Bot Movement - Visual Example</h1>
+
+        <div class="panels">
+            <div class="panel">
+                <h2>📍 Game Map (Click to set target)</h2>
+                <canvas id="canvas" width="560" height="560"></canvas>
+
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #4CAF50;"></div>
+                        <span>Bot (35x35px)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #FF5722;"></div>
+                        <span>Target Cell</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #666;"></div>
+                        <span>Wall</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #2196F3; opacity: 0.5;"></div>
+                        <span>Path</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #FF9800;"></div>
+                        <span>Bomb</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: rgba(255, 0, 0, 0.3);"></div>
+                        <span>Danger Zone</span>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button id="btnStart">▶️ Start Movement</button>
+                    <button id="btnPause">⏸️ Pause</button>
+                    <button id="btnReset">🔄 Reset</button>
+                    <button id="btnStep">⏭️ Step</button>
+                    <button id="btnPlaceBomb">💣 Place Bomb</button>
+                    <button id="btnClearBombs">🗑️ Clear Bombs</button>
+                </div>
+                <div style="margin-top: 10px; color: #999; font-size: 12px;">
+                    ℹ️ Left-click: Set target | Right-click: Place bomb
+                </div>
+
+                <div class="speed-control">
+                    <label>Speed:</label>
+                    <input type="flameRange" id="speedSlider" min="1" max="10" value="5">
+                    <span id="speedValue">5x</span>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>📊 Movement Log</h2>
+                <div id="log" class="log"></div>
+
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-label">Current Tick</div>
+                        <div class="stat-value" id="statTick">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Bot Position</div>
+                        <div class="stat-value" id="statPos">(0, 0)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Cell Index</div>
+                        <div class="stat-value" id="statCell">(0, 0)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Distance to Target</div>
+                        <div class="stat-value" id="statDist">0px</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Active Bombs</div>
+                        <div class="stat-value" id="statBombs">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Mode</div>
+                        <div class="stat-value" id="statMode">IDLE</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration - matching bombermanBot.ts CONFIG
+        const CELL_SIZE = 40;
+        const PLAYER_SIZE = 35;
+        const PLAYER_HALF_SIZE = 17;
+        const GRID_SIZE = 14;
+        const MOVE_SPEED = 1; // pixels per tick
+        const BASE_TICK_RATE = 300; // Fixed base rate from bombermanBot.ts
+        const BOT_LOGIC_INTERVAL = 300; // Default logic interval
+        const MOVE_INTERVAL_MS = 17; // Movement tick interval
+        const MOVE_STEP_SIZE = 1; // Pixels moved per movement tick
+        const MIN_LOGIC_DELAY = 50; // Minimum delay between logic ticks
+
+        // Game state
+        let botPosition = { x: 42, y: 42 }; // Centered in cell (1,1)
+        let targetCell = null;
+        let path = [];
+        let currentWaypointIndex = 0;
+        let isMoving = false;
+        let isPaused = false;
+        let tickCount = 0;
+        let animationInterval = null;
+        let bombs = []; // Array of {x, y, flameRange, timeLeft, id}
+        let botMode = 'IDLE'; // IDLE, NORMAL, ESCAPE
+        let escapeTarget = null;
+        let isExecuting = false; // Prevent concurrent execution
+        let eventQueue = []; // Queue for bomb/event processing
+        let nextLogicDelay = BOT_LOGIC_INTERVAL; // Dynamic delay
+        let botSpeed = 1; // Bot movement speed multiplier
+
+        // Walls (simple maze)
+        const walls = [
+            { x: 3, y: 1 }, { x: 3, y: 2 }, { x: 3, y: 3 },
+            { x: 7, y: 5 }, { x: 7, y: 6 }, { x: 7, y: 7 },
+            { x: 10, y: 3 }, { x: 11, y: 3 }, { x: 12, y: 3 },
+        ];
+
+        // Canvas setup
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // UI elements
+        const log = document.getElementById('log');
+        const btnStart = document.getElementById('btnStart');
+        const btnPause = document.getElementById('btnPause');
+        const btnReset = document.getElementById('btnReset');
+        const btnStep = document.getElementById('btnStep');
+        const btnPlaceBomb = document.getElementById('btnPlaceBomb');
+        const btnClearBombs = document.getElementById('btnClearBombs');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+
+        // ============================================================================
+        // COORDINATE SYSTEM FUNCTIONS (from fixed implementation)
+        // ============================================================================
+
+        function pixelToCellIndex(botTopLeft) {
+            const botCenterX = botTopLeft.x + PLAYER_HALF_SIZE;
+            const botCenterY = botTopLeft.y + PLAYER_HALF_SIZE;
+            return {
+                x: Math.floor(botCenterX / CELL_SIZE),
+                y: Math.floor(botCenterY / CELL_SIZE)
+            };
+        }
+
+        function pixelToCell(botTopLeft) {
+
+            return {
+                x: Math.floor(botTopLeft.x / CELL_SIZE),
+                y: Math.floor(botTopLeft.y / CELL_SIZE)
+            };
+        }
+
+        function cellToPixelCenter(cellIndex) {
+            return {
+                x: cellIndex.x * CELL_SIZE + CELL_SIZE / 2,
+                y: cellIndex.y * CELL_SIZE + CELL_SIZE / 2
+            };
+        }
+
+        function cellToPixelPositionForBot(cellIndex) {
+            const center = cellToPixelCenter(cellIndex);
+            return {
+                x: center.x - PLAYER_HALF_SIZE,
+                y: center.y - PLAYER_HALF_SIZE
+            };
+        }
+
+        function botTopLeftToCenter(botTopLeft) {
+            return {
+                x: botTopLeft.x + PLAYER_HALF_SIZE,
+                y: botTopLeft.y + PLAYER_HALF_SIZE
+            };
+        }
+
+        function getDistance(pos1, pos2) {
+            const dx = pos2.x - pos1.x;
+            const dy = pos2.y - pos1.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function getManhattanDistance(pos1, pos2) {
+            return Math.abs(pos2.x - pos1.x) + Math.abs(pos2.y - pos1.y);
+        }
+
+        function isAtPosition(botTopLeft, targetCenter, threshold = 8) {
+            const botCenter = botTopLeftToCenter(botTopLeft);
+            const distance = getDistance(botCenter, targetCenter);
+            return distance <= threshold; // 8px margin
+        }
+
+        function getDirectionToTarget(botTopLeft, targetCenter) {
+            const botCenter = botTopLeftToCenter(botTopLeft);
+            const dx = targetCenter.x - botCenter.x;
+            const dy = targetCenter.y - botCenter.y;
+
+            if (Math.abs(dx) < 2 && Math.abs(dy) < 2) {
+                return 'STOP';
+            }
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                return dx > 0 ? 'RIGHT' : 'LEFT';
+            } else {
+                return dy > 0 ? 'DOWN' : 'UP';
+            }
+        }
+
+        // ============================================================================
+        // BOMB LOGIC
+        // ============================================================================
+
+        const BOMB_TIME = 3000; // 3 seconds
+        const BOMB_RANGE = 2; // cells
+        const BOMB_SAFETY_MARGIN = 80; // pixels
+
+        function placeBomb(cellX, cellY) {
+            const bombId = Date.now();
+            bombs.push({
+                x: cellX * CELL_SIZE + CELL_SIZE / 2,
+                y: cellY * CELL_SIZE + CELL_SIZE / 2,
+                flameRange: BOMB_RANGE,
+                timeLeft: BOMB_TIME,
+                id: bombId
+            });
+            addLog(`💣 Bomb placed at cell (${cellX}, ${cellY})`, 'debug');
+            return bombId;
+        }
+
+        function updateBombs(deltaTime) {
+            bombs = bombs.filter(bomb => {
+                bomb.timeLeft -= deltaTime;
+                if (bomb.timeLeft <= 0) {
+                    addLog(`💥 Bomb exploded at (${Math.floor(bomb.x / CELL_SIZE)}, ${Math.floor(bomb.y / CELL_SIZE)})`, 'debug');
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function isPositionInDangerZone(position) {
+            console.log('%c🤪 ~ file: index.html:432 [] -> position : ', 'color: #2f782f', position);
+
+            for (const bomb of bombs) {
+                console.log('%c🤪 ~ file: index.html:435 [] -> bomb : ', 'color: #0ec8cb', bomb);
+                const distance = getDistance(position, bomb);
+                console.log('%c🤪 ~ file: index.html:435 [] -> distance : ', 'color: #f5c134', distance);
+                const dangerRadius = bomb.flameRange * CELL_SIZE + PLAYER_SIZE / 2 + BOMB_SAFETY_MARGIN;
+                console.log('%c🤪 ~ file: index.html:439 [] -> dangerRadius : ', 'color: #30edca', dangerRadius);
+
+                if (distance < dangerRadius) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function getDangerCells() {
+            const dangerSet = new Set();
+
+            for (const bomb of bombs) {
+                const bombCell = {
+                    x: Math.floor(bomb.x / CELL_SIZE),
+                    y: Math.floor(bomb.y / CELL_SIZE)
+                };
+
+                // Add bomb cell
+                dangerSet.add(`${bombCell.x},${bombCell.y}`);
+
+                // Add cells in 4 directions
+                const directions = [
+                    { dx: 0, dy: -1 }, // UP
+                    { dx: 0, dy: 1 },  // DOWN
+                    { dx: -1, dy: 0 }, // LEFT
+                    { dx: 1, dy: 0 }   // RIGHT
+                ];
+
+                for (const dir of directions) {
+                    for (let i = 1; i <= bomb.flameRange; i++) {
+                        const cx = bombCell.x + dir.dx * i;
+                        const cy = bombCell.y + dir.dy * i;
+
+                        // Check bounds
+                        if (cx < 0 || cx >= GRID_SIZE || cy < 0 || cy >= GRID_SIZE) break;
+
+                        // Check wall blocking
+                        if (walls.some(w => w.x === cx && w.y === cy)) break;
+
+                        dangerSet.add(`${cx},${cy}`);
+                    }
+                }
+            }
+
+            return dangerSet;
+        }
+
+        function findSafeCell() {
+            const botCell = pixelToCellIndex(botPosition);
+            const dangerCells = getDangerCells();
+
+            // BFS to find nearest safe cell
+            const queue = [{ cell: botCell, dist: 0 }];
+            const visited = new Set();
+            visited.add(`${botCell.x},${botCell.y}`);
+
+            while (queue.length > 0) {
+                const { cell, dist } = queue.shift();
+                const key = `${cell.x},${cell.y}`;
+
+                // Check if safe
+                if (!dangerCells.has(key)) {
+                    addLog(`🛡️ Found safe cell at (${cell.x}, ${cell.y}) - distance: ${dist}`, 'debug');
+                    return cell;
+                }
+
+                // Check neighbors
+                const neighbors = [
+                    { x: cell.x, y: cell.y - 1 },
+                    { x: cell.x, y: cell.y + 1 },
+                    { x: cell.x - 1, y: cell.y },
+                    { x: cell.x + 1, y: cell.y }
+                ];
+
+                for (const neighbor of neighbors) {
+                    const nKey = `${neighbor.x},${neighbor.y}`;
+
+                    if (visited.has(nKey)) continue;
+                    if (neighbor.x < 0 || neighbor.x >= GRID_SIZE ||
+                        neighbor.y < 0 || neighbor.y >= GRID_SIZE) continue;
+                    if (walls.some(w => w.x === neighbor.x && w.y === neighbor.y)) continue;
+
+                    visited.add(nKey);
+                    queue.push({ cell: neighbor, dist: dist + 1 });
+                }
+            }
+
+            return null; // No safe cell found
+        }
+
+        // ============================================================================
+        // PATHFINDING (Simple A*)
+        // ============================================================================
+
+        function findPath(startCell, goalCell, avoidDanger = false) {
+            const openSet = [{ cell: startCell, f: 0, g: 0, parent: null }];
+            const closedSet = new Set();
+            const dangerCells = avoidDanger ? getDangerCells() : new Set();
+
+            while (openSet.length > 0) {
+                openSet.sort((a, b) => a.f - b.f);
+                const current = openSet.shift();
+
+                const key = `${current.cell.x},${current.cell.y}`;
+                if (closedSet.has(key)) continue;
+                closedSet.add(key);
+
+                if (current.cell.x === goalCell.x && current.cell.y === goalCell.y) {
+                    // Reconstruct path - skip start position
+                    const path = [];
+                    let node = current;
+                    while (node) {
+                        path.unshift(cellToPixelCenter(node.cell));
+                        node = node.parent;
+                    }
+                    // Remove first waypoint if it's the start position
+                    if (path.length > 1) {
+                        const firstWaypoint = path[0];
+                        const startCenter = cellToPixelCenter(startCell);
+                        const dist = Math.hypot(
+                            firstWaypoint.x - startCenter.x,
+                            firstWaypoint.y - startCenter.y
+                        );
+                        if (dist < 5) {
+                            path.shift(); // Remove duplicate start
+                        }
+                    }
+                    return path;
+                }
+
+                // Get neighbors
+                const neighbors = [
+                    { x: current.cell.x, y: current.cell.y - 1 }, // UP
+                    { x: current.cell.x, y: current.cell.y + 1 }, // DOWN
+                    { x: current.cell.x - 1, y: current.cell.y }, // LEFT
+                    { x: current.cell.x + 1, y: current.cell.y }, // RIGHT
+                ];
+
+                for (const neighbor of neighbors) {
+                    // Validate
+                    if (neighbor.x < 0 || neighbor.x >= GRID_SIZE ||
+                        neighbor.y < 0 || neighbor.y >= GRID_SIZE) continue;
+
+                    // Check walls
+                    if (walls.some(w => w.x === neighbor.x && w.y === neighbor.y)) continue;
+
+                    // Avoid danger zones if requested
+                    if (avoidDanger && dangerCells.has(`${neighbor.x},${neighbor.y}`)) continue;
+
+                    const g = current.g + 1;
+                    const h = Math.abs(neighbor.x - goalCell.x) + Math.abs(neighbor.y - goalCell.y);
+                    const f = g + h;
+
+                    openSet.push({
+                        cell: neighbor,
+                        f: f,
+                        g: g,
+                        parent: current
+                    });
+                }
+            }
+
+            return null;
+        }
+
+        // ============================================================================
+        // ESCAPE PATHFINDING (BFS from bombermanBot - findEscapePath)
+        // ============================================================================
+
+        /**
+         * Compute explosion cells for a bomb (cached for performance)
+         * Ported from utils/pathfinding.ts
+         */
+        function computeExplosionCells(bomb) {
+            const unsafe = new Set();
+            const bombCell = pixelToCell({ x: bomb.x, y: bomb.y });
+            const bombKey = `${bombCell.x},${bombCell.y}`;
+            unsafe.add(bombKey);
+
+            // Calculate explosion in 4 directions
+            const directions = [
+                { x: 0, y: -1 }, // UP
+                { x: 0, y: 1 },  // DOWN
+                { x: -1, dy: 0 }, // LEFT
+                { x: 1, y: 0 }   // RIGHT
+            ];
+
+            for (const dir of directions) {
+                for (let i = 1; i <= bomb.flameRange; i++) {
+                    const currentCell = {
+                        x: bombCell.x + dir.x * i,
+                        y: bombCell.y + dir.y * i
+                    };
+
+                    // Bounds check
+                    if (currentCell.x < 0 || currentCell.x >= GRID_SIZE ||
+                        currentCell.y < 0 || currentCell.y >= GRID_SIZE) {
+                        break;
+                    }
+
+                    const cellKey = `${currentCell.x},${currentCell.y}`;
+
+                    // Wall blocks explosion
+                    if (walls.some(w => w.x === currentCell.x && w.y === currentCell.y)) {
+                        break;
+                    }
+
+                    unsafe.add(cellKey);
+                }
+            }
+
+            return unsafe;
+        }
+
+        /**
+         * Find escape path from dangerous bomb using BFS
+         * Ported from utils/pathfinding.ts:findEscapePath
+         * Returns: { nextStep, target, path, direction } or null
+         */
+        function findEscapePath(startPos, bomb) {
+            addLog(`🔍 Finding escape path from bomb at (${Math.floor(bomb.x / CELL_SIZE)}, ${Math.floor(bomb.y / CELL_SIZE)})`, 'debug');
+
+            // startPos is bot's TOP-LEFT corner, convert to center for distance calculations
+            const startPosCenter = botTopLeftToCenter(startPos);
+            const startCell = pixelToCellIndex(startPos);
+            const unsafe = computeExplosionCells(bomb);
+            const startKey = `${startCell.x},${startCell.y}`;
+
+            // Check if already safe (use CENTER position for distance check)
+            const pixelDist = Math.hypot(
+                startPosCenter.x - bomb.x,
+                startPosCenter.y - bomb.y
+            );
+            const dangerRadius = bomb.flameRange * CELL_SIZE + BOMB_SAFETY_MARGIN;
+
+            if (!unsafe.has(startKey)) {
+                addLog(`✅ Already safe from bomb (dist: ${pixelDist.toFixed(0)}px > ${dangerRadius}px)`, 'debug');
+                return {
+                    nextStep: startPos,
+                    target: startPos,
+                    path: [startPos],
+                    direction: 'STOP'
+                };
+            }
+
+            // BFS to find safe cell
+            const queue = [{ cell: startCell, steps: 0 }];
+            const parentMap = new Map();
+            const visited = new Set([startKey]);
+
+            const timeRemaining = bomb.timeLeft || 3000; // milliseconds
+            const pixelsPerSecond = (1000 / MOVE_INTERVAL_MS) * MOVE_STEP_SIZE * botSpeed;
+
+            const directions = [
+                { x: 0, y: -1 },
+                { x: 0, y: 1 },
+                { x: -1, y: 0 },
+                { x: 1, y: 0 }
+            ];
+
+            const maxVisits = GRID_SIZE * GRID_SIZE * 4;
+            let visits = 0;
+
+            while (queue.length > 0 && visits < maxVisits) {
+                const node = queue.shift();
+                visits++;
+
+                for (const dir of directions) {
+                    const nextCell = {
+                        x: node.cell.x + dir.x,
+                        y: node.cell.y + dir.y
+                    };
+                    const key = `${nextCell.x},${nextCell.y}`;
+
+                    if (visited.has(key)) continue;
+
+                    // Bounds check
+                    if (nextCell.x < 0 || nextCell.x >= GRID_SIZE ||
+                        nextCell.y < 0 || nextCell.y >= GRID_SIZE) {
+                        continue;
+                    }
+
+                    // Wall check
+                    if (walls.some(w => w.x === nextCell.x && w.y === nextCell.y)) {
+                        continue;
+                    }
+
+                    visited.add(key);
+                    parentMap.set(key, `${node.cell.x},${node.cell.y}`);
+
+                    const nextSteps = node.steps + 1;
+                    const targetCenter = cellToPixelCenter(nextCell);
+
+                    // Calculate distance from START CENTER (not top-left)
+                    // const distancePx = Math.hypot(
+                    //     targetCenter.x - startPosCenter.x,
+                    //     targetCenter.y - startPosCenter.y
+                    // );
+                    // const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
+
+                    // Skip unsafe cells that can't be passed in time
+                    // if (unsafe.has(key) && arrivalTimeMs >= timeRemaining) {
+                    //     continue;
+                    // }
+
+                    // Found safe cell reachable in time!
+                    if (!unsafe.has(key)) {
+                        // Double-check pixel distance from bomb (important!)
+                        // const distFromBomb = Math.hypot(
+                        //     targetCenter.x - bomb.x,
+                        //     targetCenter.y - bomb.y
+                        // );
+
+                        // if (distFromBomb <= dangerRadius) {
+                        //     // Still in danger, skip this cell
+                        //     continue;
+                        // }
+
+                        addLog(`✅ Found safe cell at (${nextCell.x}, ${nextCell.y}), arrival:`, 'debug');
+
+                        // Reconstruct path (cell indices)
+                        const fullPath = reconstructEscapePath(parentMap, startCell, nextCell);
+
+                        // Convert ALL cells to pixel centers (including start)
+                        const pixelPath = fullPath.map(cell => cellToPixelCenter(cell));
+
+                        // Log the constructed path for debugging
+                        addLog(`📍 Path cells: ${fullPath.map(c => `(${c.x},${c.y})`).join(' -> ')}`, 'debug');
+                        addLog(`📍 Path pixels: ${pixelPath.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' -> ')}`, 'debug');
+
+                        // Next step is the second waypoint (first is current position)
+                        const nextTarget = pixelPath.length > 1 ? pixelPath[1] : pixelPath[0];
+                        const direction = getDirectionToTarget(startPos, nextTarget);
+
+                        addLog(`🛤️ Escape path: ${pixelPath.length} steps, direction: ${direction}`, 'debug');
+
+                        return {
+                            nextStep: nextTarget,
+                            target: pixelPath[pixelPath.length - 1],
+                            path: pixelPath,
+                            direction
+                        };
+                    }
+
+                    queue.push({ cell: nextCell, steps: nextSteps });
+                }
+            }
+
+            addLog(`❌ No escape path found after ${visits} visits`, 'error');
+            return null;
+        }
+
+        /**
+         * Reconstruct path from parent map (BFS helper)
+         */
+        function reconstructEscapePath(parentMap, startCell, endCell) {
+            const startKey = `${startCell.x},${startCell.y}`;
+            let currentKey = `${endCell.x},${endCell.y}`;
+            const path = [endCell];
+
+            let iterations = 0;
+            const maxIterations = 1000;
+
+            while (currentKey !== startKey && iterations < maxIterations) {
+                iterations++;
+
+                const parentKey = parentMap.get(currentKey);
+                if (!parentKey) break;
+
+                const parts = parentKey.split(',');
+                const parentCell = { x: parseInt(parts[0]), y: parseInt(parts[1]) };
+
+                path.unshift(parentCell);
+                currentKey = parentKey;
+            }
+
+            return path;
+        }
+
+        // ============================================================================
+        // LOGGING
+        // ============================================================================
+
+        function addLog(message, type = 'debug') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = message;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function clearLog() {
+            log.innerHTML = '';
+        }
+
+        // ============================================================================
+        // RENDERING
+        // ============================================================================
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= GRID_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * CELL_SIZE, 0);
+                ctx.lineTo(i * CELL_SIZE, GRID_SIZE * CELL_SIZE);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, i * CELL_SIZE);
+                ctx.lineTo(GRID_SIZE * CELL_SIZE, i * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // Draw cell indices (every 2 cells)
+            ctx.fillStyle = '#666';
+            ctx.font = '10px monospace';
+            for (let y = 0; y < GRID_SIZE; y += 2) {
+                for (let x = 0; x < GRID_SIZE; x += 2) {
+                    ctx.fillText(`${x},${y}`, x * CELL_SIZE + 2, y * CELL_SIZE + 12);
+                }
+            }
+
+            // Draw walls
+            ctx.fillStyle = '#666';
+            walls.forEach(wall => {
+                ctx.fillRect(wall.x * CELL_SIZE, wall.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            });
+
+            // Draw danger zones
+            if (bombs.length > 0) {
+                const dangerCells = getDangerCells();
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+                dangerCells.forEach(key => {
+                    const [x, y] = key.split(',').map(Number);
+                    ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                });
+
+                // Draw danger zone border
+                ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                ctx.lineWidth = 2;
+                dangerCells.forEach(key => {
+                    const [x, y] = key.split(',').map(Number);
+                    ctx.strokeRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                });
+            }
+
+            // Draw bombs
+            bombs.forEach(bomb => {
+                const bombCell = {
+                    x: Math.floor(bomb.x / CELL_SIZE),
+                    y: Math.floor(bomb.y / CELL_SIZE)
+                };
+
+                // Bomb body
+                ctx.fillStyle = '#FF9800';
+                ctx.beginPath();
+                ctx.arc(bomb.x, bomb.y, 12, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Bomb fuse
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(bomb.x, bomb.y - 12);
+                ctx.lineTo(bomb.x - 5, bomb.y - 20);
+                ctx.stroke();
+
+                // Timer text
+                const seconds = (bomb.timeLeft / 1000).toFixed(1);
+                ctx.fillStyle = '#FFF';
+                ctx.font = 'bold 14px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(seconds, bomb.x, bomb.y + 25);
+            });
+
+            // Draw path
+            if (path.length > 0) {
+                ctx.strokeStyle = '#2196F3';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                path.forEach((pos, i) => {
+                    if (i === 0) ctx.moveTo(pos.x, pos.y);
+                    else ctx.lineTo(pos.x, pos.y);
+                });
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Draw waypoints
+                path.forEach((pos, i) => {
+                    ctx.fillStyle = i === currentWaypointIndex ? '#FFC107' : '#2196F3';
+                    ctx.beginPath();
+                    ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+
+            // Draw target cell
+            if (targetCell) {
+                ctx.fillStyle = 'rgba(255, 87, 34, 0.3)';
+                ctx.fillRect(targetCell.x * CELL_SIZE, targetCell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+
+                const center = cellToPixelCenter(targetCell);
+                ctx.fillStyle = '#FF5722';
+                ctx.beginPath();
+                ctx.arc(center.x, center.y, 6, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Draw bot
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(botPosition.x, botPosition.y, PLAYER_SIZE, PLAYER_SIZE);
+
+            // Draw bot center
+            const botCenter = botTopLeftToCenter(botPosition);
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.arc(botCenter.x, botCenter.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw bot direction indicator
+            if (isMoving && path.length > 0) {
+                const target = path[currentWaypointIndex];
+                if (target) {
+                    const dir = getDirectionToTarget(botPosition, target);
+                    let dx = 0, dy = 0;
+                    if (dir === 'RIGHT') dx = 15;
+                    if (dir === 'LEFT') dx = -15;
+                    if (dir === 'DOWN') dy = 15;
+                    if (dir === 'UP') dy = -15;
+
+                    ctx.strokeStyle = '#FFF';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(botCenter.x, botCenter.y);
+                    ctx.lineTo(botCenter.x + dx, botCenter.y + dy);
+                    ctx.stroke();
+                }
+            }
+
+            // Update stats
+            const botCell = pixelToCellIndex(botPosition);
+            document.getElementById('statTick').textContent = tickCount;
+            document.getElementById('statPos').textContent =
+                `(${botPosition.x.toFixed(1)}, ${botPosition.y.toFixed(1)})`;
+            document.getElementById('statCell').textContent =
+                `(${botCell.x}, ${botCell.y})`;
+            document.getElementById('statBombs').textContent = bombs.length;
+            document.getElementById('statMode').textContent = botMode;
+            document.getElementById('statMode').style.color =
+                botMode === 'ESCAPE' ? '#FF5722' :
+                    botMode === 'NORMAL' ? '#4CAF50' : '#999';
+
+            if (path.length > 0 && currentWaypointIndex < path.length) {
+                const target = path[currentWaypointIndex];
+                const dist = getDistance(botTopLeftToCenter(botPosition), target);
+                document.getElementById('statDist').textContent = `${dist.toFixed(1)}px`;
+            } else {
+                document.getElementById('statDist').textContent = '0px';
+            }
+        }
+
+        // ============================================================================
+        // BOT LOGIC - followPath from bombermanBot.ts (lines 477-633)
+        // ============================================================================
+
+        const CONFIG = {
+            WAYPOINT_ADVANCE_THRESHOLD: 3,
+            FINAL_TARGET_THRESHOLD: 3,
+            REACH_MARGIN_PIXELS: 8,
+        };
+
+        // Port of followPath logic from bombermanBot.ts
+        function followPath() {
+            if (!path || path.length <= 1) {
+                addLog('❌ No valid path to follow', 'error');
+                return false;
+            }
+
+            const currentPos = botPosition;
+
+            addLog(`🛤️ Following path: ${path.length} steps`, 'debug');
+
+            // CRITICAL FIX: Skip first waypoint if it's the starting position or too close
+            if (currentWaypointIndex === 0 && path.length > 1) {
+                const firstWaypoint = path[0];
+                addLog(`Checking first waypoint: (${firstWaypoint.x}, ${firstWaypoint.y}) vs current: (${currentPos.x}, ${currentPos.y})`, 'debug');
+
+                const distToFirst = getDistance(botTopLeftToCenter(currentPos), firstWaypoint);
+                addLog(`Distance to first waypoint: ${distToFirst.toFixed(1)}px`, 'debug');
+
+                if (distToFirst < 1) {
+                    addLog(`⏭️ Skipping waypoint 1 (dist: ${distToFirst.toFixed(1)}px) -> targeting waypoint 2`, 'debug');
+                    currentWaypointIndex = 1;
+                }
+            }
+
+            // Advance through reached waypoints
+            currentWaypointIndex = advanceWaypoints(currentPos, currentWaypointIndex);
+
+            const targetWaypoint = path[currentWaypointIndex];
+
+            if (!targetWaypoint) {
+                addLog(`⚠️ No target waypoint at index ${currentWaypointIndex}`, 'error');
+                return false;
+            }
+
+            addLog(`🎯 Target waypoint ${currentWaypointIndex + 1}/${path.length}: (${targetWaypoint.x}, ${targetWaypoint.y})`, 'debug');
+
+            // --- SEGMENT-BASED DIRECTION CALCULATION ---
+            // This is the key fix from bombermanBot.ts to prevent corner cutting
+            const prevWaypoint = path[currentWaypointIndex - 1];
+            let direction;
+
+            if (!prevWaypoint) {
+                // Fallback to direct movement
+                addLog('⚠️ No previous waypoint, using direct movement', 'debug');
+                direction = getDirectionToTarget(currentPos, targetWaypoint);
+            } else {
+                // Calculate direction based on path SEGMENT (not direct to target)
+                const segmentDx = targetWaypoint.x - prevWaypoint.x;
+                const segmentDy = targetWaypoint.y - prevWaypoint.y;
+
+                if (Math.abs(segmentDx) > Math.abs(segmentDy)) {
+                    // Horizontal segment
+                    direction = segmentDx > 0 ? 'RIGHT' : 'LEFT';
+                } else {
+                    // Vertical segment
+                    direction = segmentDy > 0 ? 'DOWN' : 'UP';
+                }
+
+                addLog(`🔩 Segment-based direction: prevWP=(${prevWaypoint.x},${prevWaypoint.y}) -> currWP=(${targetWaypoint.x},${targetWaypoint.y}) => ${direction}`, 'debug');
+            }
+
+            // Check if reached final target
+            const isAtLastWaypoint = currentWaypointIndex >= path.length - 1;
+            if (isAtLastWaypoint && targetCell) {
+                const finalTarget = cellToPixelCenter(targetCell);
+                if (isAtPosition(currentPos, finalTarget, CONFIG.FINAL_TARGET_THRESHOLD)) {
+                    addLog('✅ Reached final path target', 'reached');
+                    return false; // Stop movement
+                }
+            }
+
+            if (!direction || direction === 'STOP') {
+                addLog('⚠️ Invalid direction calculated, stopping', 'error');
+                return false;
+            }
+
+            addLog(`🔩 Segment Move: ${currentWaypointIndex + 1}/${path.length}, Pos: (${currentPos.x.toFixed(0)}, ${currentPos.y.toFixed(0)}), SegDir: ${direction} , MOVE_SPEED: (${MOVE_SPEED}, ${targetWaypoint.y})`, 'move',);
+
+            // Move bot
+            switch (direction) {
+                case 'UP':
+                    botPosition.y -= MOVE_SPEED;
+                    break;
+                case 'DOWN':
+                    botPosition.y += MOVE_SPEED;
+                    break;
+                case 'LEFT':
+                    botPosition.x -= MOVE_SPEED;
+                    break;
+                case 'RIGHT':
+                    botPosition.x += MOVE_SPEED;
+                    break;
+            }
+
+            addLog(`New position: (${botPosition.x.toFixed(1)}, ${botPosition.y.toFixed(1)})`, 'move');
+
+            // Calculate dynamic delay for the next tick
+            calculateDynamicDelay(
+                botTopLeftToCenter(currentPos),
+                targetWaypoint,
+                parseInt(speedSlider.value)
+            );
+
+            return true; // Continue movement
+        }
+
+        function calculateDynamicDelay(
+            from, // bot center
+            to,   // waypoint center
+            speedMultiplier // from slider
+        ) {
+            const distance = getDistance(from, to);
+
+            // This is a simpler, more reactive logic suitable for the simulation.
+            // If we are far from the waypoint, tick fast to move smoothly.
+            // If we are close, slow down to the default tick rate to allow more time to process the turn.
+            const decisionThreshold = PLAYER_HALF_SIZE; // Approx. half the bot's width
+
+            if (distance > decisionThreshold) {
+                // Far away: use the minimum delay to move fast
+                nextLogicDelay = MIN_LOGIC_DELAY;
+            } else {
+                // Close: use the standard interval to prepare for the next action/turn
+                nextLogicDelay = BOT_LOGIC_INTERVAL / speedMultiplier;
+            }
+
+            addLog(
+                `⏱️ Dynamic Delay: ${nextLogicDelay.toFixed(0)}ms | Dist: ${distance.toFixed(
+                    0
+                )}px`, 'debug'
+            );
+        }
+
+
+        function advanceWaypoints(currentPos, startIndex) {
+            if (!path) return startIndex;
+
+            let index = startIndex;
+            const pathLength = path.length;
+
+            // Advance through all reached waypoints in one pass
+            while (index < pathLength - 1) {
+                const waypoint = path[index];
+                if (!waypoint) break;
+
+                if (!isAtPosition(currentPos, waypoint, 2)) {
+                    break;
+                }
+
+                addLog(`✓ Waypoint ${index + 1}/${pathLength} at (${waypoint.x}, ${waypoint.y})`, 'reached');
+                index++;
+            }
+
+            return index;
+        }
+
+        // ============================================================================
+        // BOT LOGIC (Main execution loop)
+        // ============================================================================
+
+        function executeBotLogic() {
+            // Clear any pending timeout to ensure this tick runs now
+            if (animationInterval) clearTimeout(animationInterval);
+
+            if (isPaused || !isMoving) return; // Stop the loop if paused or stopped
+
+            tickCount++;
+            addLog(`━━━━ TICK ${tickCount} ━━━━`, 'tick');
+
+            // Set a default delay. This will be overridden by calculateDynamicDelay if moving.
+            const speed = parseInt(speedSlider.value);
+            nextLogicDelay = BOT_LOGIC_INTERVAL / speed;
+
+            // Update bombs (use a fixed time delta for simplicity in simulation)
+            // updateBombs(nextLogicDelay);
+
+            // Priority 1: Check if in danger - EMERGENCY ESCAPE
+            const inDanger = isPositionInDangerZone(botPosition);
+            if (inDanger && botMode !== 'ESCAPE') {
+                addLog('🚨 DANGER DETECTED! Switching to ESCAPE mode!', 'error');
+                botMode = 'ESCAPE';
+
+                // Find the most dangerous bomb (closest or earliest to explode)
+                let dangerousBomb = null;
+                if (bombs.length > 0) {
+                    dangerousBomb = bombs.reduce((closest, bomb) => {
+                        const distCurrent = getDistance(botTopLeftToCenter(botPosition), bomb);
+                        const distClosest = closest ? getDistance(botTopLeftToCenter(botPosition), closest) : Infinity;
+                        return distCurrent < distClosest ? bomb : closest;
+                    }, null);
+                }
+
+                if (dangerousBomb) {
+                    // ✅ USE THE NEW BFS-BASED findEscapePath
+                    addLog(`💣 Using BFS escape from bomb at (${Math.floor(dangerousBomb.x / CELL_SIZE)}, ${Math.floor(dangerousBomb.y / CELL_SIZE)})`, 'error');
+                    const escapeResult = findEscapePath(botPosition, dangerousBomb);
+                    console.log('%c🤪 ~ file: index.html:1196 [] -> escapeResult : ', 'color: #641afd', escapeResult);
+
+                    if (escapeResult && escapeResult.path && escapeResult.path.length > 1) {
+                        addLog(`🏃 BFS escape path found: ${escapeResult.path.length} steps to (${Math.floor(escapeResult.target.x / CELL_SIZE)}, ${Math.floor(escapeResult.target.y / CELL_SIZE)})`, 'error');
+                        path = escapeResult.path;
+                        currentWaypointIndex = 0;
+                        escapeTarget = pixelToCellIndex(escapeResult.target);
+                    } else {
+                        // Fallback to old method if BFS fails
+                        addLog('⚠️ BFS failed, trying fallback safe cell search...', 'error');
+                        const safeCell = findSafeCell();
+                        console.log('%c🤪 ~ file: index.html:1233 [] -> safeCell : ', 'color: #f9feef', safeCell);
+                        if (safeCell) {
+                            const botCell = pixelToCellIndex(botPosition);
+                            const escapePath = findPath(botCell, safeCell, true);
+                            if (escapePath) {
+                                addLog(`🏃 Fallback escape path found: ${escapePath.length} waypoints`, 'error');
+                                path = escapePath;
+                                currentWaypointIndex = 0;
+                                escapeTarget = safeCell;
+                            } else {
+                                addLog('❌ NO ESCAPE PATH FOUND!', 'error');
+                            }
+                        } else {
+                            addLog('❌ NO SAFE CELL FOUND!', 'error');
+                        }
+                    }
+                } else {
+                    addLog('⚠️ In danger but no bombs found!', 'error');
+                }
+            }
+
+            // Check if escaped danger
+            if (botMode === 'ESCAPE' && !inDanger) {
+                addLog('✅ Escaped danger zone! Returning to IDLE mode', 'reached');
+                botMode = 'IDLE';
+                isMoving = false;
+            }
+
+            // Check if we have a path to follow
+            if (!isMoving || path.length === 0 || currentWaypointIndex >= path.length) {
+                addLog('No active path. Stopping.', 'debug');
+                isMoving = false;
+                botMode = 'IDLE';
+                draw();
+                return; // Stop the loop
+            }
+
+            // Set mode based on situation
+            if (botMode !== 'ESCAPE') {
+                botMode = 'NORMAL';
+            }
+
+            const shouldContinue = followPath();
+
+            if (!shouldContinue) {
+                addLog('🏁 Movement complete', 'reached');
+                isMoving = false;
+                botMode = 'IDLE';
+            }
+
+            draw();
+
+            // ✅ Schedule the next tick using the (potentially dynamic) delay
+            if (isMoving) {
+                animationInterval = setTimeout(executeBotLogic, nextLogicDelay);
+            }
+        }
+
+        // ============================================================================
+        // EVENT HANDLERS
+        // ============================================================================
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const cellX = Math.floor(x / CELL_SIZE);
+            const cellY = Math.floor(y / CELL_SIZE);
+
+            if (walls.some(w => w.x === cellX && w.y === cellY)) {
+                addLog(`❌ Cannot target wall at (${cellX}, ${cellY})`, 'error');
+                return;
+            }
+
+            targetCell = { x: cellX, y: cellY };
+            addLog(`🎯 Target set to cell (${cellX}, ${cellY})`, 'debug');
+
+            const startCell = pixelToCellIndex(botPosition);
+            addLog(`📍 Bot is at cell (${startCell.x}, ${startCell.y})`, 'debug');
+
+            path = findPath(startCell, targetCell);
+
+            if (path) {
+                currentWaypointIndex = 0;
+                addLog(`✓ Path found: ${path.length} waypoints`, 'debug');
+            } else {
+                addLog('❌ No path found to target', 'error');
+            }
+
+            draw();
+        });
+
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            const cellX = Math.floor(x / CELL_SIZE);
+            const cellY = Math.floor(y / CELL_SIZE);
+            if (walls.some(w => w.x === cellX && w.y === cellY)) {
+                addLog(`❌ Cannot place bomb on wall at (${cellX}, ${cellY})`, 'error');
+                return;
+            }
+            placeBomb(cellX, cellY);
+            draw();
+        });
+
+        btnStart.addEventListener('click', () => {
+            if (path.length === 0) {
+                addLog('❌ No path set. Click on map to set target.', 'error');
+                return;
+            }
+            if (isMoving) return; // Prevent multiple loops
+
+            isMoving = true;
+            isPaused = false;
+            addLog('▶️ Movement started', 'tick');
+
+            // Start the first tick immediately
+            executeBotLogic();
+        });
+
+        btnPause.addEventListener('click', () => {
+            isPaused = !isPaused;
+            btnPause.textContent = isPaused ? '▶️ Resume' : '⏸️ Pause';
+            addLog(isPaused ? '⏸️ Paused' : '▶️ Resumed', 'tick');
+
+            // If resuming, and we were in a moving state, kick off the logic loop again.
+            if (!isPaused && isMoving) {
+                executeBotLogic();
+            }
+        });
+
+        btnReset.addEventListener('click', () => {
+            if (animationInterval) clearTimeout(animationInterval);
+            isMoving = false;
+            isPaused = false;
+            tickCount = 0;
+            currentWaypointIndex = 0;
+            botPosition = { x: 42, y: 42 };
+            targetCell = null;
+            path = [];
+            bombs = [];
+            botMode = 'IDLE';
+            escapeTarget = null;
+            btnPause.textContent = '⏸️ Pause';
+            clearLog();
+            addLog('🔄 Reset complete', 'tick');
+            draw();
+        });
+
+        btnPlaceBomb.addEventListener('click', () => {
+            const botCell = pixelToCellIndex(botPosition);
+            placeBomb(botCell.x, botCell.y);
+            addLog('💣 Bomb placed at bot position', 'debug');
+            draw();
+        });
+
+        btnClearBombs.addEventListener('click', () => {
+            bombs = [];
+            addLog('🗑️ All bombs cleared', 'debug');
+            draw();
+        });
+
+        btnStep.addEventListener('click', () => {
+            if (path.length === 0) {
+                addLog('❌ No path set. Click on map to set target.', 'error');
+                return;
+            }
+            isPaused = false;
+            isMoving = true;
+            executeBotLogic(); // Run one tick
+            isMoving = false; // Stop after one tick
+        });
+
+        speedSlider.addEventListener('input', (e) => {
+            const speed = parseInt(e.target.value);
+            speedValue.textContent = `${speed}x`;
+            // No need to restart the interval anymore. The new speed will be picked up
+            // by executeBotLogic on the next tick when it calculates the default delay.
+        });
+
+        // Initial draw
+        addLog('👋 Welcome to Bomberman Bot Escape Test!', 'tick');
+        addLog('', 'debug');
+        addLog('🎯 Instructions:', 'tick');
+        addLog('  • Left-click on map: Set target destination', 'debug');
+        addLog('  • Right-click on map: Place bomb', 'debug');
+        addLog('  • 💣 Place Bomb button: Place bomb at bot position', 'debug');
+        addLog('  • ▶️ Start: Begin movement', 'debug');
+        addLog('', 'debug');
+        addLog('🧪 Test Escape Logic:', 'tick');
+        addLog('  1. Set a target for the bot to move to', 'debug');
+        addLog('  2. Click "Start Movement"', 'debug');
+        addLog('  3. Place bombs near bot path (right-click)', 'debug');
+        addLog('  4. Watch bot automatically escape to safety!', 'debug');
+        addLog('', 'debug');
+        addLog(`📐 Bot: ${PLAYER_SIZE}px x ${PLAYER_SIZE}px, Cell: ${CELL_SIZE}px x ${CELL_SIZE}px`, 'debug');
+        addLog(`📍 Bot starts centered in cell (1,1) at pixel (42.5, 42.5)`, 'debug');
+        addLog(`💣 Bomb: flameRange ${BOMB_RANGE} cells, Timer ${BOMB_TIME / 1000}s, Safety margin: ${BOMB_SAFETY_MARGIN}px`, 'debug');
+        draw();
+    </script>
+</body>
+
+</html>

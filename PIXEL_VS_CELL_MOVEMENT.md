@@ -15,7 +15,7 @@
 ```typescript
 // src/utils/constants.ts
 export const CELL_SIZE = 40;           // Grid cell size
-export const MOVE_STEP_SIZE = 3;       // Server moves 3px per tick
+export const MOVE_STEP_SIZE = 1;       // Server moves 1px per tick
 export const MOVE_INTERVAL_MS = 17;    // Server tickrate: 17ms (~59 FPS)
 ```
 

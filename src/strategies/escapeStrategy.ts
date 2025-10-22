@@ -375,6 +375,10 @@ export class EscapeStrategy extends BaseStrategy {
     let ownBombPosition: Position | undefined = undefined;
 
     // Tìm mối đe dọa lớn nhất (ví dụ: bom sắp nổ nhất hoặc gần nhất)
+    console.log(
+      "🔍 Analyzing danger zones and bombs... ",
+      JSON.stringify(gameState.map.bombs)
+    );
     const dangerousBombs = gameState.map.bombs
       .filter((b) => isPositionInDangerZone(currentPos, gameState)) // Giả định hàm này kiểm tra nguy hiểm từ 1 bomb
       .sort((a, b) => a.timeRemaining - b.timeRemaining); // Ưu tiên bom sắp nổ
@@ -427,13 +431,19 @@ export class EscapeStrategy extends BaseStrategy {
     // Giả định hàm findEscapePath mới được sửa đổi để nhận Bomb làm tham số
     // Note: Cần đảm bảo hàm findEscapePath hỗ trợ tùy chọn 'allowOwnBomb'
     escapeResult = findEscapePath(currentPos, dangerousBomb, gameState);
+    console.log(
+      "%c🤪 ~ file: c:UserslehaihackathonsrcstrategiesescapeStrategy.ts:433 [] -> escapeResult : ",
+      "color: #6dba40",
+      escapeResult
+    );
 
     if (escapeResult) {
       // ... (Logic lấy DirectionToTarget giữ nguyên)
       const { nextStep, target, direction, path } = escapeResult;
 
       console.log(
-        `🛤️ EMERGENCY PATHFOUND: Found path to safe zone at cell (${target.x}, ${target.y})`
+        `🛤️ EMERGENCY PATHFOUND: Found path to safe zone at cell )`,
+        JSON.stringify(escapeResult)
       );
       console.log(
         `   Next step (Pixel): (${nextStep.x}, ${nextStep.y}), direction: ${direction}, path length: ${path.length}`

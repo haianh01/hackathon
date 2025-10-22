@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bomberman Bot - Keyboard Debug Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #4CAF50;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 600px 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: #2a2a2a;
+            border: 2px solid #444;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .panel h2 {
+            margin-bottom: 15px;
+            color: #FFC107;
+            font-size: 18px;
+        }
+
+        #canvas {
+            border: 2px solid #4CAF50;
+            background: #1a1a1a;
+            display: block;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        button {
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #45a049;
+        }
+
+        button:active {
+            background: #3d8b40;
+            transform: scale(0.98);
+        }
+
+        button.danger {
+            background: #f44336;
+        }
+
+        button.danger:hover {
+            background: #da190b;
+        }
+
+        .keyboard-controls {
+            display: grid;
+            grid-template-columns: repeat(3, 80px);
+            grid-template-rows: repeat(3, 60px);
+            gap: 10px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        .key-btn {
+            padding: 5px;
+            font-size: 20px;
+            background: #333;
+            border: 2px solid #555;
+        }
+
+        .key-btn:hover {
+            background: #444;
+        }
+
+        .key-btn.active {
+            background: #4CAF50;
+            border-color: #4CAF50;
+        }
+
+        .key-up { grid-column: 2; grid-row: 1; }
+        .key-left { grid-column: 1; grid-row: 2; }
+        .key-down { grid-column: 2; grid-row: 2; }
+        .key-right { grid-column: 3; grid-row: 2; }
+        .key-space { grid-column: 1 / 4; grid-row: 3; }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat {
+            background: #1a1a1a;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #444;
+        }
+
+        .stat-label {
+            color: #999;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            color: #4CAF50;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .log {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 10px;
+            height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+            padding: 3px 6px;
+            border-radius: 3px;
+        }
+
+        .log-info { background: #1e3a5f; color: #64B5F6; }
+        .log-move { background: #2e4a2e; color: #81C784; }
+        .log-bomb { background: #4a2e1e; color: #FFB74D; }
+        .log-error { background: #4a1e1e; color: #EF5350; }
+
+        .legend {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+            padding: 10px;
+            background: #1a1a1a;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+            border: 1px solid #666;
+        }
+
+        .instructions {
+            background: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            border: 1px solid #444;
+        }
+
+        .instructions h3 {
+            color: #FFC107;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+
+        .instructions ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .instructions li {
+            padding: 5px 0;
+            color: #999;
+            font-size: 12px;
+        }
+
+        .instructions li::before {
+            content: "▸ ";
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .mode-indicator {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+
+        .mode-manual {
+            background: #2196F3;
+            color: white;
+        }
+
+        .mode-auto {
+            background: #4CAF50;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Bomberman Bot - Keyboard Debug Control</h1>
+
+        <div class="main-grid">
+            <div class="panel">
+                <h2>📍 Game Map
+                    <span id="modeIndicator" class="mode-indicator mode-manual">MANUAL</span>
+                </h2>
+                <canvas id="canvas" width="560" height="560"></canvas>
+
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #4CAF50;"></div>
+                        <span>Bot (35x35px)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #666;"></div>
+                        <span>Wall</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #FF9800;"></div>
+                        <span>Bomb</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: rgba(255, 0, 0, 0.3);"></div>
+                        <span>Danger Zone</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #FFD700;"></div>
+                        <span>Chest</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-box" style="background: #9C27B0;"></div>
+                        <span>Item</span>
+                    </div>
+                </div>
+
+                <div class="keyboard-controls">
+                    <button class="key-btn key-up" data-dir="UP">↑</button>
+                    <button class="key-btn key-left" data-dir="LEFT">←</button>
+                    <button class="key-btn key-down" data-dir="DOWN">↓</button>
+                    <button class="key-btn key-right" data-dir="RIGHT">→</button>
+                    <button class="key-btn key-space danger">SPACE (BOMB)</button>
+                </div>
+
+                <div class="controls">
+                    <button id="btnToggleMode">🤖 Switch to AUTO</button>
+                    <button id="btnReset">🔄 Reset</button>
+                    <button id="btnClearLog">🗑️ Clear Log</button>
+                    <button id="btnPlaceBomb" class="danger">💣 Place Bomb</button>
+                    <button id="btnClearBombs">Clear Bombs</button>
+                    <button id="btnAddChest">📦 Add Chest</button>
+                </div>
+
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-label">Bot Position</div>
+                        <div class="stat-value" id="statPos">(0, 0)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Cell Index</div>
+                        <div class="stat-value" id="statCell">(0, 0)</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Active Bombs</div>
+                        <div class="stat-value" id="statBombs">0</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-label">Movement Speed</div>
+                        <div class="stat-value" id="statSpeed">1 px/tick</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>📊 Debug Log</h2>
+                <div id="log" class="log"></div>
+
+                <div class="instructions">
+                    <h3>⌨️ Keyboard Controls:</h3>
+                    <ul>
+                        <li><strong>Arrow Keys / WASD:</strong> Move bot (Manual mode)</li>
+                        <li><strong>Space / B:</strong> Place bomb at current position</li>
+                        <li><strong>M:</strong> Toggle between Manual/Auto mode</li>
+                        <li><strong>R:</strong> Reset bot position</li>
+                        <li><strong>C:</strong> Clear all bombs</li>
+                        <li><strong>S:</strong> Stop movement</li>
+                    </ul>
+
+                    <h3 style="margin-top: 15px;">🖱️ Mouse Controls:</h3>
+                    <ul>
+                        <li><strong>Left Click:</strong> Add chest at position</li>
+                        <li><strong>Right Click:</strong> Place bomb at position</li>
+                    </ul>
+
+                    <h3 style="margin-top: 15px;">🎯 Debug Features:</h3>
+                    <ul>
+                        <li><strong>Manual Mode:</strong> Control bot directly with keyboard</li>
+                        <li><strong>Auto Mode:</strong> AI pathfinding to clicked chest</li>
+                        <li>Real-time bomb danger zone visualization</li>
+                        <li>Collision detection with walls</li>
+                        <li>Movement validation and logging</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const CELL_SIZE = 40;
+        const PLAYER_SIZE = 35;
+        const PLAYER_HALF_SIZE = 17;
+        const GRID_SIZE = 14;
+        const MOVE_SPEED = 1;
+        const BOMB_TIME = 3000;
+        const BOMB_RANGE = 2;
+        const BOMB_SAFETY_MARGIN = 80;
+
+        // Game state
+        let botPosition = { x: 42, y: 42 };
+        let currentDirection = null;
+        let manualMode = true;
+        let bombs = [];
+        let chests = [];
+        let items = [];
+        let keysPressed = new Set();
+        let lastMoveTime = 0;
+        let autoTarget = null;
+        let autoPath = [];
+
+        // Walls (simple maze)
+        const walls = [
+            {x: 3, y: 1}, {x: 3, y: 2}, {x: 3, y: 3},
+            {x: 7, y: 5}, {x: 7, y: 6}, {x: 7, y: 7},
+            {x: 10, y: 3}, {x: 11, y: 3}, {x: 12, y: 3},
+        ];
+
+        // Canvas setup
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const log = document.getElementById('log');
+
+        // ============================================================================
+        // COORDINATE FUNCTIONS
+        // ============================================================================
+
+        function pixelToCellIndex(botTopLeft) {
+            const botCenterX = botTopLeft.x + PLAYER_HALF_SIZE;
+            const botCenterY = botTopLeft.y + PLAYER_HALF_SIZE;
+            return {
+                x: Math.floor(botCenterX / CELL_SIZE),
+                y: Math.floor(botCenterY / CELL_SIZE)
+            };
+        }
+
+        function cellToPixelCenter(cellIndex) {
+            return {
+                x: cellIndex.x * CELL_SIZE + CELL_SIZE / 2,
+                y: cellIndex.y * CELL_SIZE + CELL_SIZE / 2
+            };
+        }
+
+        function botTopLeftToCenter(botTopLeft) {
+            return {
+                x: botTopLeft.x + PLAYER_HALF_SIZE,
+                y: botTopLeft.y + PLAYER_HALF_SIZE
+            };
+        }
+
+        function getDistance(pos1, pos2) {
+            const dx = pos2.x - pos1.x;
+            const dy = pos2.y - pos1.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function getDirectionToTarget(botTopLeft, targetCenter) {
+            const botCenter = botTopLeftToCenter(botTopLeft);
+            const dx = targetCenter.x - botCenter.x;
+            const dy = targetCenter.y - botCenter.y;
+
+            if (Math.abs(dx) < 2 && Math.abs(dy) < 2) {
+                return 'STOP';
+            }
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                return dx > 0 ? 'RIGHT' : 'LEFT';
+            } else {
+                return dy > 0 ? 'DOWN' : 'UP';
+            }
+        }
+
+        function isAtPosition(botTopLeft, targetCenter, threshold = 8) {
+            const botCenter = botTopLeftToCenter(botTopLeft);
+            const distance = getDistance(botCenter, targetCenter);
+            return distance <= threshold;
+        }
+
+        // ============================================================================
+        // BOMB LOGIC
+        // ============================================================================
+
+        function placeBomb(x, y) {
+            const bombId = Date.now();
+            bombs.push({
+                x: x,
+                y: y,
+                flameRange: BOMB_RANGE,
+                timeLeft: BOMB_TIME,
+                id: bombId
+            });
+            addLog(`💣 Bomb placed at (${Math.floor(x)}, ${Math.floor(y)})`, 'bomb');
+            return bombId;
+        }
+
+        function updateBombs(deltaTime) {
+            bombs = bombs.filter(bomb => {
+                bomb.timeLeft -= deltaTime;
+                if (bomb.timeLeft <= 0) {
+                    addLog(`💥 Bomb exploded at (${Math.floor(bomb.x)}, ${Math.floor(bomb.y)})`, 'bomb');
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function getDangerCells() {
+            const dangerSet = new Set();
+
+            for (const bomb of bombs) {
+                const bombCell = {
+                    x: Math.floor(bomb.x / CELL_SIZE),
+                    y: Math.floor(bomb.y / CELL_SIZE)
+                };
+
+                dangerSet.add(`${bombCell.x},${bombCell.y}`);
+
+                const directions = [
+                    {dx: 0, dy: -1}, {dx: 0, dy: 1},
+                    {dx: -1, dy: 0}, {dx: 1, dy: 0}
+                ];
+
+                for (const dir of directions) {
+                    for (let i = 1; i <= bomb.flameRange; i++) {
+                        const cx = bombCell.x + dir.dx * i;
+                        const cy = bombCell.y + dir.dy * i;
+
+                        if (cx < 0 || cx >= GRID_SIZE || cy < 0 || cy >= GRID_SIZE) break;
+                        if (walls.some(w => w.x === cx && w.y === cy)) break;
+
+                        dangerSet.add(`${cx},${cy}`);
+                    }
+                }
+            }
+
+            return dangerSet;
+        }
+
+        function isPositionInDangerZone(position) {
+            const botCenter = botTopLeftToCenter(position);
+
+            for (const bomb of bombs) {
+                const distance = getDistance(botCenter, bomb);
+                const dangerRadius = bomb.flameRange * CELL_SIZE + PLAYER_SIZE/2 + BOMB_SAFETY_MARGIN;
+
+                if (distance < dangerRadius) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // ============================================================================
+        // PATHFINDING
+        // ============================================================================
+
+        function findPath(startCell, goalCell, avoidDanger = false) {
+            const openSet = [{cell: startCell, f: 0, g: 0, parent: null}];
+            const closedSet = new Set();
+            const dangerCells = avoidDanger ? getDangerCells() : new Set();
+
+            while (openSet.length > 0) {
+                openSet.sort((a, b) => a.f - b.f);
+                const current = openSet.shift();
+
+                const key = `${current.cell.x},${current.cell.y}`;
+                if (closedSet.has(key)) continue;
+                closedSet.add(key);
+
+                if (current.cell.x === goalCell.x && current.cell.y === goalCell.y) {
+                    const path = [];
+                    let node = current;
+                    while (node) {
+                        path.unshift(cellToPixelCenter(node.cell));
+                        node = node.parent;
+                    }
+                    return path;
+                }
+
+                const neighbors = [
+                    {x: current.cell.x, y: current.cell.y - 1},
+                    {x: current.cell.x, y: current.cell.y + 1},
+                    {x: current.cell.x - 1, y: current.cell.y},
+                    {x: current.cell.x + 1, y: current.cell.y},
+                ];
+
+                for (const neighbor of neighbors) {
+                    if (neighbor.x < 0 || neighbor.x >= GRID_SIZE ||
+                        neighbor.y < 0 || neighbor.y >= GRID_SIZE) continue;
+
+                    if (walls.some(w => w.x === neighbor.x && w.y === neighbor.y)) continue;
+                    if (avoidDanger && dangerCells.has(`${neighbor.x},${neighbor.y}`)) continue;
+
+                    const g = current.g + 1;
+                    const h = Math.abs(neighbor.x - goalCell.x) + Math.abs(neighbor.y - goalCell.y);
+                    const f = g + h;
+
+                    openSet.push({
+                        cell: neighbor,
+                        f: f,
+                        g: g,
+                        parent: current
+                    });
+                }
+            }
+
+            return null;
+        }
+
+        // ============================================================================
+        // COLLISION DETECTION
+        // ============================================================================
+
+        function canMoveTo(newPosition) {
+            const botCell = pixelToCellIndex(newPosition);
+
+            // Check bounds
+            if (newPosition.x < 0 || newPosition.y < 0 ||
+                newPosition.x + PLAYER_SIZE > GRID_SIZE * CELL_SIZE ||
+                newPosition.y + PLAYER_SIZE > GRID_SIZE * CELL_SIZE) {
+                return false;
+            }
+
+            // Check walls
+            const botCorners = [
+                {x: newPosition.x, y: newPosition.y},
+                {x: newPosition.x + PLAYER_SIZE, y: newPosition.y},
+                {x: newPosition.x, y: newPosition.y + PLAYER_SIZE},
+                {x: newPosition.x + PLAYER_SIZE, y: newPosition.y + PLAYER_SIZE}
+            ];
+
+            for (const corner of botCorners) {
+                const cornerCell = pixelToCellIndex({x: corner.x - PLAYER_HALF_SIZE, y: corner.y - PLAYER_HALF_SIZE});
+                if (walls.some(w => w.x === cornerCell.x && w.y === cornerCell.y)) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        // ============================================================================
+        // MOVEMENT
+        // ============================================================================
+
+        function moveBot(direction) {
+            const newPosition = {...botPosition};
+
+            switch(direction) {
+                case 'UP':
+                    newPosition.y -= MOVE_SPEED;
+                    break;
+                case 'DOWN':
+                    newPosition.y += MOVE_SPEED;
+                    break;
+                case 'LEFT':
+                    newPosition.x -= MOVE_SPEED;
+                    break;
+                case 'RIGHT':
+                    newPosition.x += MOVE_SPEED;
+                    break;
+            }
+
+            if (canMoveTo(newPosition)) {
+                botPosition = newPosition;
+                currentDirection = direction;
+                const cell = pixelToCellIndex(botPosition);
+                addLog(`🚶 Moved ${direction} to (${botPosition.x.toFixed(1)}, ${botPosition.y.toFixed(1)}) - Cell (${cell.x}, ${cell.y})`, 'move');
+                return true;
+            } else {
+                addLog(`⛔ Cannot move ${direction} - collision detected`, 'error');
+                return false;
+            }
+        }
+
+        function autoMove() {
+            if (!autoTarget || autoPath.length === 0) {
+                return;
+            }
+
+            const targetWaypoint = autoPath[0];
+
+            if (isAtPosition(botPosition, targetWaypoint, 8)) {
+                autoPath.shift();
+                if (autoPath.length === 0) {
+                    addLog('🎯 Reached auto target!', 'info');
+                    autoTarget = null;
+                }
+                return;
+            }
+
+            const direction = getDirectionToTarget(botPosition, targetWaypoint);
+            if (direction !== 'STOP') {
+                moveBot(direction);
+            }
+        }
+
+        // ============================================================================
+        // RENDERING
+        // ============================================================================
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw grid
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= GRID_SIZE; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * CELL_SIZE, 0);
+                ctx.lineTo(i * CELL_SIZE, GRID_SIZE * CELL_SIZE);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(0, i * CELL_SIZE);
+                ctx.lineTo(GRID_SIZE * CELL_SIZE, i * CELL_SIZE);
+                ctx.stroke();
+            }
+
+            // Draw walls
+            ctx.fillStyle = '#666';
+            walls.forEach(wall => {
+                ctx.fillRect(wall.x * CELL_SIZE, wall.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+            });
+
+            // Draw danger zones
+            if (bombs.length > 0) {
+                const dangerCells = getDangerCells();
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.2)';
+                dangerCells.forEach(key => {
+                    const [x, y] = key.split(',').map(Number);
+                    ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+                });
+            }
+
+            // Draw chests
+            chests.forEach(chest => {
+                ctx.fillStyle = '#FFD700';
+                ctx.fillRect(chest.x * CELL_SIZE + 5, chest.y * CELL_SIZE + 5, CELL_SIZE - 10, CELL_SIZE - 10);
+                ctx.strokeStyle = '#FFA000';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(chest.x * CELL_SIZE + 5, chest.y * CELL_SIZE + 5, CELL_SIZE - 10, CELL_SIZE - 10);
+            });
+
+            // Draw items
+            items.forEach(item => {
+                ctx.fillStyle = '#9C27B0';
+                ctx.beginPath();
+                const center = cellToPixelCenter(item);
+                ctx.arc(center.x, center.y, 10, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Draw bombs
+            bombs.forEach(bomb => {
+                ctx.fillStyle = '#FF9800';
+                ctx.beginPath();
+                ctx.arc(bomb.x, bomb.y, 12, 0, Math.PI * 2);
+                ctx.fill();
+
+                const seconds = (bomb.timeLeft / 1000).toFixed(1);
+                ctx.fillStyle = '#FFF';
+                ctx.font = 'bold 12px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(seconds, bomb.x, bomb.y + 25);
+            });
+
+            // Draw auto path
+            if (autoPath.length > 0) {
+                ctx.strokeStyle = '#2196F3';
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]);
+                ctx.beginPath();
+                autoPath.forEach((pos, i) => {
+                    if (i === 0) ctx.moveTo(pos.x, pos.y);
+                    else ctx.lineTo(pos.x, pos.y);
+                });
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Draw bot
+            ctx.fillStyle = '#4CAF50';
+            ctx.fillRect(botPosition.x, botPosition.y, PLAYER_SIZE, PLAYER_SIZE);
+
+            // Draw bot center
+            const botCenter = botTopLeftToCenter(botPosition);
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.arc(botCenter.x, botCenter.y, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw direction indicator
+            if (currentDirection) {
+                let dx = 0, dy = 0;
+                if (currentDirection === 'RIGHT') dx = 15;
+                if (currentDirection === 'LEFT') dx = -15;
+                if (currentDirection === 'DOWN') dy = 15;
+                if (currentDirection === 'UP') dy = -15;
+
+                ctx.strokeStyle = '#FFF';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(botCenter.x, botCenter.y);
+                ctx.lineTo(botCenter.x + dx, botCenter.y + dy);
+                ctx.stroke();
+            }
+
+            // Update stats
+            const botCell = pixelToCellIndex(botPosition);
+            document.getElementById('statPos').textContent = `(${botPosition.x.toFixed(1)}, ${botPosition.y.toFixed(1)})`;
+            document.getElementById('statCell').textContent = `(${botCell.x}, ${botCell.y})`;
+            document.getElementById('statBombs').textContent = bombs.length;
+        }
+
+        // ============================================================================
+        // LOGGING
+        // ============================================================================
+
+        function addLog(message, type = 'info') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${message}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+
+            // Keep only last 100 entries
+            while (log.children.length > 100) {
+                log.removeChild(log.firstChild);
+            }
+        }
+
+        // ============================================================================
+        // EVENT HANDLERS
+        // ============================================================================
+
+        document.addEventListener('keydown', (e) => {
+            if (keysPressed.has(e.key.toLowerCase())) return;
+            keysPressed.add(e.key.toLowerCase());
+
+            // Manual controls
+            const keyMap = {
+                'arrowup': 'UP', 'w': 'UP',
+                'arrowdown': 'DOWN', 's': 'DOWN',
+                'arrowleft': 'LEFT', 'a': 'LEFT',
+                'arrowright': 'RIGHT', 'd': 'RIGHT'
+            };
+
+            const direction = keyMap[e.key.toLowerCase()];
+            if (direction && manualMode) {
+                e.preventDefault();
+                moveBot(direction);
+                updateKeyUI(direction, true);
+            }
+
+            // Place bomb
+            if (e.key === ' ' || e.key.toLowerCase() === 'b') {
+                e.preventDefault();
+                const botCenter = botTopLeftToCenter(botPosition);
+                placeBomb(botCenter.x, botCenter.y);
+                updateKeyUI('SPACE', true);
+            }
+
+            // Toggle mode
+            if (e.key.toLowerCase() === 'm') {
+                toggleMode();
+            }
+
+            // Reset
+            if (e.key.toLowerCase() === 'r') {
+                resetBot();
+            }
+
+            // Clear bombs
+            if (e.key.toLowerCase() === 'c') {
+                bombs = [];
+                addLog('🗑️ All bombs cleared', 'info');
+            }
+
+            draw();
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keysPressed.delete(e.key.toLowerCase());
+
+            const keyMap = {
+                'arrowup': 'UP', 'w': 'UP',
+                'arrowdown': 'DOWN', 's': 'DOWN',
+                'arrowleft': 'LEFT', 'a': 'LEFT',
+                'arrowright': 'RIGHT', 'd': 'RIGHT',
+                ' ': 'SPACE', 'b': 'SPACE'
+            };
+
+            const direction = keyMap[e.key.toLowerCase()];
+            if (direction) {
+                updateKeyUI(direction, false);
+            }
+        });
+
+        // Button controls
+        document.querySelectorAll('.key-btn').forEach(btn => {
+            btn.addEventListener('mousedown', () => {
+                const dir = btn.dataset.dir;
+                if (dir && manualMode) {
+                    moveBot(dir);
+                } else if (btn.classList.contains('key-space')) {
+                    const botCenter = botTopLeftToCenter(botPosition);
+                    placeBomb(botCenter.x, botCenter.y);
+                }
+                draw();
+            });
+        });
+
+        document.getElementById('btnToggleMode').addEventListener('click', toggleMode);
+        document.getElementById('btnReset').addEventListener('click', resetBot);
+        document.getElementById('btnClearLog').addEventListener('click', () => {
+            log.innerHTML = '';
+            addLog('📝 Log cleared', 'info');
+        });
+        document.getElementById('btnPlaceBomb').addEventListener('click', () => {
+            const botCenter = botTopLeftToCenter(botPosition);
+            placeBomb(botCenter.x, botCenter.y);
+            draw();
+        });
+        document.getElementById('btnClearBombs').addEventListener('click', () => {
+            bombs = [];
+            addLog('🗑️ All bombs cleared', 'info');
+            draw();
+        });
+        document.getElementById('btnAddChest').addEventListener('click', () => {
+            const botCell = pixelToCellIndex(botPosition);
+            chests.push(botCell);
+            addLog(`📦 Chest added at cell (${botCell.x}, ${botCell.y})`, 'info');
+            draw();
+        });
+
+        // Mouse controls
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const cellX = Math.floor(x / CELL_SIZE);
+            const cellY = Math.floor(y / CELL_SIZE);
+
+            if (walls.some(w => w.x === cellX && w.y === cellY)) {
+                addLog(`❌ Cannot place chest on wall`, 'error');
+                return;
+            }
+
+            chests.push({x: cellX, y: cellY});
+            addLog(`📦 Chest added at cell (${cellX}, ${cellY})`, 'info');
+
+            // Auto mode: pathfind to chest
+            if (!manualMode) {
+                const botCell = pixelToCellIndex(botPosition);
+                autoTarget = {x: cellX, y: cellY};
+                autoPath = findPath(botCell, autoTarget, false);
+                if (autoPath) {
+                    addLog(`🎯 Auto path to chest: ${autoPath.length} waypoints`, 'info');
+                } else {
+                    addLog(`❌ No path to chest found`, 'error');
+                }
+            }
+
+            draw();
+        });
+
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const cellX = Math.floor(x / CELL_SIZE);
+            const cellY = Math.floor(y / CELL_SIZE);
+
+            const center = cellToPixelCenter({x: cellX, y: cellY});
+            placeBomb(center.x, center.y);
+            draw();
+        });
+
+        // Helper functions
+        function updateKeyUI(direction, active) {
+            const keyMap = {
+                'UP': '.key-up',
+                'DOWN': '.key-down',
+                'LEFT': '.key-left',
+                'RIGHT': '.key-right',
+                'SPACE': '.key-space'
+            };
+
+            const selector = keyMap[direction];
+            if (selector) {
+                const btn = document.querySelector(selector);
+                if (active) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            }
+        }
+
+        function toggleMode() {
+            manualMode = !manualMode;
+            const modeIndicator = document.getElementById('modeIndicator');
+            const btn = document.getElementById('btnToggleMode');
+
+            if (manualMode) {
+                modeIndicator.textContent = 'MANUAL';
+                modeIndicator.className = 'mode-indicator mode-manual';
+                btn.textContent = '🤖 Switch to AUTO';
+                autoTarget = null;
+                autoPath = [];
+                addLog('🎮 Switched to MANUAL mode', 'info');
+            } else {
+                modeIndicator.textContent = 'AUTO';
+                modeIndicator.className = 'mode-indicator mode-auto';
+                btn.textContent = '🎮 Switch to MANUAL';
+                addLog('🤖 Switched to AUTO mode (click chest to pathfind)', 'info');
+            }
+            draw();
+        }
+
+        function resetBot() {
+            botPosition = { x: 42, y: 42 };
+            currentDirection = null;
+            autoTarget = null;
+            autoPath = [];
+            addLog('🔄 Bot position reset', 'info');
+            draw();
+        }
+
+        // ============================================================================
+        // GAME LOOP
+        // ============================================================================
+
+        let lastFrameTime = Date.now();
+
+        function gameLoop() {
+            const now = Date.now();
+            const deltaTime = now - lastFrameTime;
+            lastFrameTime = now;
+
+            updateBombs(deltaTime);
+
+            if (!manualMode) {
+                autoMove();
+            }
+
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initialize
+        addLog('👋 Keyboard Debug Control Ready!', 'info');
+        addLog('🎮 Use arrow keys or WASD to move in MANUAL mode', 'info');
+        addLog('🤖 Switch to AUTO mode to pathfind to chests', 'info');
+        addLog('💣 Press SPACE or B to place bomb', 'info');
+        draw();
+        gameLoop();
+    </script>
+</body>
+</html>

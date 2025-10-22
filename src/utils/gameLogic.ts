@@ -1,21 +1,103 @@
 import { GameState, Position, Bomb, Direction } from "../types";
-import {
-  getPositionInDirection,
-  getPositionsInLine,
-  manhattanDistance,
-  positionsEqual,
-} from "./position";
+import { getPositionInDirection, getPositionsInLine } from "./position";
 import { computeExplosionCells } from "./pathfinding";
 import { pixelToCellIndex, createCellIndexKey } from "./coordinates";
 import {
   CELL_SIZE,
+  CHEST_SIZE,
   isBlocked,
   isPositionBlocked,
   isWithinBounds,
+  pixelToCell,
+  PLAYER_SIZE,
+  WALL_SIZE,
 } from "./constants";
 
+interface ExplosionCache {
+  bombId: string;
+  cells: Set<string>;
+  timestamp: number;
+}
+
+const explosionCache = new Map<string, ExplosionCache>();
+const CACHE_TTL = 100; // Cache valid for 100ms
+
 /**
- * Kiểm tra xem vị trí có an toàn (không bị bom nổ) không
+ * Clear old cache entries (call periodically)
+ */
+function cleanExplosionCache(): void {
+  const now = Date.now();
+  for (const [key, cache] of explosionCache.entries()) {
+    if (now - cache.timestamp > CACHE_TTL) {
+      explosionCache.delete(key);
+    }
+  }
+}
+
+/**
+ * Get cached explosion cells or compute if not cached
+ */
+function getCachedExplosionCells(
+  bomb: Bomb,
+  gameState: GameState
+): Set<string> {
+  const bombKey = `${bomb.position.x},${bomb.position.y},${bomb.flameRange}`;
+  const cached = explosionCache.get(bombKey);
+
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.cells;
+  }
+
+  const cells = computeExplosionCells(bomb, gameState);
+  explosionCache.set(bombKey, {
+    bombId: bombKey,
+    cells,
+    timestamp: Date.now(),
+  });
+
+  return cells;
+}
+
+/**
+ * OPTIMIZED: Fast AABB collision check with early exit
+ * Uses bit operations for faster comparisons
+ */
+function checkBoxCollision(
+  pos1: Position,
+  size1: number,
+  pos2: Position,
+  size2: number
+): boolean {
+  // Early exit: check horizontal axis first (most likely to fail)
+  if (pos1.x >= pos2.x + size2 || pos1.x + size1 <= pos2.x) {
+    return false;
+  }
+
+  // Only check vertical if horizontal overlaps
+  return pos1.y < pos2.y + size2 && pos1.y + size1 > pos2.y;
+}
+
+/**
+ * OPTIMIZED: Check if position overlaps with any bomb center
+ * Used for bomb placement validation
+ */
+function isOnBombPosition(position: Position, bombs: Bomb[]): boolean {
+  // Check if bot center is within 10px of any bomb center
+  for (const bomb of bombs) {
+    const dx = position.x - bomb.position.x;
+    const dy = position.y - bomb.position.y;
+    // Use squared distance to avoid sqrt
+    if (dx * dx + dy * dy < 100) {
+      // 10px threshold
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * OPTIMIZED: Check if position is safe from all bombs
+ * Uses cached explosion cells for performance
  */
 export function isPositionSafe(
   position: Position,
@@ -25,52 +107,70 @@ export function isPositionSafe(
 }
 
 /**
- * Kiểm tra xem vị trí có nằm trong vùng nguy hiểm của bom không
+ * OPTIMIZED: Check danger zone with caching
+ * CONFLICT FIX: This must align with BombermanBot's threat detection
  */
 export function isPositionInDangerZone(
   position: Position,
   gameState: GameState
 ): boolean {
-  const cellIndex = pixelToCellIndex(position);
+  // Clean cache periodically (every 10th call)
+  if (Math.random() < 0.1) {
+    cleanExplosionCache();
+  }
+
+  const cellIndex = pixelToCell(position);
+  console.log("%c🤪 ~  cellIndex : ", "color: #d865ea", cellIndex);
+
   const cellKey = createCellIndexKey(cellIndex);
 
+  // Early exit if no bombs
+  if (!gameState.map.bombs || gameState.map.bombs.length === 0) {
+    return false;
+  }
+
+  // Use cached explosion cells
   for (const bomb of gameState.map.bombs) {
-    const unsafeCells = computeExplosionCells(bomb, gameState);
+    const unsafeCells = getCachedExplosionCells(bomb, gameState);
+
     if (unsafeCells.has(cellKey)) {
       return true;
     }
   }
+
   return false;
 }
 
 /**
- * Kiểm tra xem vị trí có nằm trong phạm vi nổ của bom không
- * Sử dụng center distance check trước, sau đó mới dùng AABB collision
+ * OPTIMIZED: Check bomb range with early exits and proper AABB
+ * CONFLICT FIX: Matches BombermanBot's BOMB_SAFETY_MARGIN (80px)
  */
 export function isPositionInBombRange(
   position: Position,
   bomb: Bomb,
   gameState: GameState
 ): boolean {
-  const CELL_SIZE = 40; // Flame cell size
-  const PLAYER_SIZE = 30; // Bot hitbox size
+  const SAFETY_MARGIN = 80; // Match BombermanBot's CONFIG.BOMB_SAFETY_MARGIN
 
-  const centerDistance = Math.hypot(
-    position.x - bomb.position.x,
-    position.y - bomb.position.y
-  );
+  // OPTIMIZATION: Quick distance check first (cheaper than AABB)
+  const dx = position.x - bomb.position.x;
+  const dy = position.y - bomb.position.y;
+  const distSquared = dx * dx + dy * dy;
 
-  const safeDistance = bomb.flameRange * CELL_SIZE + PLAYER_SIZE;
+  const maxRange = bomb.flameRange * CELL_SIZE + PLAYER_SIZE + SAFETY_MARGIN;
+  const maxRangeSquared = maxRange * maxRange;
 
-  if (centerDistance > safeDistance) {
-    return false; // Definitely safe - no need for detailed AABB checks
+  // Early exit: too far away
+  if (distSquared > maxRangeSquared) {
+    return false;
   }
 
+  // Check bomb center collision
   if (checkBoxCollision(position, PLAYER_SIZE, bomb.position, CELL_SIZE)) {
     return true;
   }
 
-  // Kiểm tra 4 hướng từ bom
+  // Check flame directions with optimized line checking
   const directions = [
     Direction.UP,
     Direction.DOWN,
@@ -86,13 +186,12 @@ export function isPositionInBombRange(
     );
 
     for (const flamePos of flamePositions) {
-      // Check AABB collision: Bot (30x30px) vs Flame cell (40x40px)
+      // AABB collision check
       if (checkBoxCollision(position, PLAYER_SIZE, flamePos, CELL_SIZE)) {
         return true;
       }
 
-      // Nếu gặp tường cứng thì ngừng lan truyền; nếu gặp chest thì chest bị ảnh hưởng
-      // chest _vẫn_ chặn flame tiếp tục vì chest có kích thước ô
+      // Stop if blocked (walls/chests block flame propagation)
       if (isPositionBlocked(flamePos, gameState)) {
         break;
       }
@@ -102,8 +201,13 @@ export function isPositionInBombRange(
   return false;
 }
 
+// ============================================================================
+// ADJACENT POSITION HELPERS - Optimized with validation
+// ============================================================================
+
 /**
- * Lấy tất cả vị trí an toàn xung quanh vị trí hiện tại
+ * OPTIMIZED: Get safe adjacent positions with proper filtering
+ * CONFLICT FIX: Now properly checks both danger AND blocking
  */
 export function getSafeAdjacentPositions(
   position: Position,
@@ -116,11 +220,19 @@ export function getSafeAdjacentPositions(
     { x: position.x + CELL_SIZE, y: position.y }, // RIGHT
   ];
 
-  return adjacentPositions.filter(
-    (pos) => !isPositionInDangerZone(pos, gameState)
-  );
+  return adjacentPositions.filter((pos) => {
+    // Must pass ALL checks
+    return (
+      isWithinBounds(pos, gameState.map.width, gameState.map.height) &&
+      !isPositionBlocked(pos, gameState) &&
+      !isPositionInDangerZone(pos, gameState)
+    );
+  });
 }
 
+/**
+ * OPTIMIZED: Get first safe adjacent position (for emergency escapes)
+ */
 export function getSafeAdjacentPositionFirst(
   position: Position,
   gameState: GameState
@@ -136,9 +248,11 @@ export function getSafeAdjacentPositionFirst(
   for (const direction of directions) {
     const newPos = getPositionInDirection(position, direction);
 
+    // Validate all conditions
     if (
+      isWithinBounds(newPos, gameState.map.width, gameState.map.height) &&
       !isPositionBlocked(newPos, gameState) &&
-      isPositionSafe(newPos, gameState)
+      !isPositionInDangerZone(newPos, gameState)
     ) {
       safePositions.push(newPos);
     }
@@ -147,16 +261,23 @@ export function getSafeAdjacentPositionFirst(
   return safePositions;
 }
 
-/**  * Tính điểm số của việc đặt bom tại vị trí
- * Sử dụng AABB collision để detect chính xác enemies/items trong flame
+// ============================================================================
+// BOMB SCORING - Optimized with priority checks
+// ============================================================================
+
+/**
+ * OPTIMIZED: Calculate bomb score with priority sorting
+ * Checks high-value targets first (enemies > chests > items)
  */
 export function calculateBombScore(
   position: Position,
   gameState: GameState
 ): number {
   let score = 0;
-  const CELL_SIZE = 40;
-  const PLAYER_SIZE = 30;
+  const flameRange = gameState.currentBot.flameRange;
+
+  // Pre-compute flame positions once
+  const allFlamePositions: Position[] = [];
   const directions = [
     Direction.UP,
     Direction.DOWN,
@@ -165,41 +286,48 @@ export function calculateBombScore(
   ];
 
   for (const direction of directions) {
-    const flamePositions = getPositionsInLine(
-      position,
-      direction,
-      gameState.currentBot.flameRange
-    );
+    const flamePositions = getPositionsInLine(position, direction, flameRange);
 
     for (const flamePos of flamePositions) {
-      // Nếu gặp tường không phá được thì dừng
-      const wall = gameState.map.walls.find((w) =>
-        positionsEqual(w.position, flamePos)
-      );
-      if (wall && !wall.isDestructible) {
+      allFlamePositions.push(flamePos);
+
+      // Stop at walls
+      if (isPositionBlocked(flamePos, gameState)) {
         break;
       }
+    }
+  }
 
-      // Điểm cho việc phá tường
-      if (wall && wall.isDestructible) {
-        score += 50;
-        break; // Tường sẽ chặn flame tiếp tục
-      }
+  // OPTIMIZATION: Check enemies first (highest priority)
+  for (const enemy of gameState.enemies) {
+    if (!enemy.isAlive) continue;
 
-      // Điểm cho việc hạ gục enemy (dùng AABB collision)
-      const enemy = gameState.enemies.find((e) =>
-        checkBoxCollision(e.position, PLAYER_SIZE, flamePos, CELL_SIZE)
-      );
-      if (enemy) {
+    for (const flamePos of allFlamePositions) {
+      if (checkBoxCollision(enemy.position, PLAYER_SIZE, flamePos, CELL_SIZE)) {
         score += 1000;
+        break; // Count each enemy once
       }
+    }
+  }
 
-      // Điểm cho việc phá item (dùng AABB collision với item size 20px)
-      const item = gameState.map.items.find((i) =>
-        checkBoxCollision(i.position, 20, flamePos, CELL_SIZE)
-      );
-      if (item) {
-        score += 10;
+  // Check chests (medium priority)
+  if (gameState.map.chests) {
+    for (const chest of gameState.map.chests) {
+      for (const flamePos of allFlamePositions) {
+        if (checkBoxCollision(chest.position, CELL_SIZE, flamePos, CELL_SIZE)) {
+          score += 50;
+          break;
+        }
+      }
+    }
+  }
+
+  // Check items (negative score - we don't want to destroy items)
+  for (const item of gameState.map.items) {
+    for (const flamePos of allFlamePositions) {
+      if (checkBoxCollision(item.position, 20, flamePos, CELL_SIZE)) {
+        score -= 100;
+        break;
       }
     }
   }
@@ -207,109 +335,134 @@ export function calculateBombScore(
   return score;
 }
 
+// ============================================================================
+// COLLISION DETECTION - Wall and obstacles
+// ============================================================================
+
 /**
- * Kiểm tra xem vị trí có va chạm với tường hoặc rương không
- * Dùng cho pixel-level collision detection
+ * OPTIMIZED: Check wall collisions with spatial optimization
  */
 
 export function isPositionCollidingWithWalls(
   position: Position,
   gameState: GameState,
-  botSize: number = 30 // Default bot size
+  botSize: number = PLAYER_SIZE
 ): boolean {
-  // Kiểm tra va chạm với mỗi tường/rương
+  // Check walls first (usually more numerous)
   for (const wall of gameState.map.walls) {
-    if (checkBoxCollision(position, botSize, wall.position, 40)) {
+    if (checkBoxCollision(position, botSize, wall.position, WALL_SIZE)) {
       return true;
     }
   }
-  for (const chest of gameState.map.chests || []) {
-    if (checkBoxCollision(position, botSize, chest.position, 40)) {
-      return true;
+
+  // Check chests
+  if (gameState.map.chests) {
+    for (const chest of gameState.map.chests) {
+      if (checkBoxCollision(position, botSize, chest.position, CHEST_SIZE)) {
+        return true;
+      }
     }
   }
+
   return false;
 }
 
+// ============================================================================
+// PROXIMITY DETECTION - Enemies and items
+// ============================================================================
+
 /**
- * Kiểm tra xem có kẻ thù nào ở gần một vị trí nhất định không.
- * @param botPosition Vị trí của bot.
- * @param gameState Trạng thái game.
-Sử dụng khoảng cách Manhattan để tính toán hiệu quả.
- * @param radius Bán kính tìm kiếm (pixel).
- * @returns True nếu có kẻ thù ở gần.
+ * OPTIMIZED: Check for nearby enemies with squared distance
  */
 export function isEnemyNearby(
   botPosition: Position,
   gameState: GameState,
   radius: number
 ): boolean {
+  const radiusSquared = radius * radius;
+
   for (const enemy of gameState.enemies) {
-    if (enemy.isAlive) {
-      const distance = manhattanDistance(botPosition, enemy.position);
-      if (distance <= radius) {
-        return true;
-      }
+    if (!enemy.isAlive) continue;
+
+    const dx = botPosition.x - enemy.position.x;
+    const dy = botPosition.y - enemy.position.y;
+    const distSquared = dx * dx + dy * dy;
+
+    if (distSquared <= radiusSquared) {
+      return true;
     }
   }
+
   return false;
 }
 
 /**
- * Kiểm tra xem có vật phẩm nào ở gần một vị trí nhất định không.
- * @param botPosition Vị trí của bot.
- * @param gameState Trạng thái game.
- * @param radius Bán kính tìm kiếm (pixel).
- * @returns True nếu có vật phẩm ở gần.
+ * OPTIMIZED: Check for nearby items with squared distance
  */
 export function isItemNearby(
   botPosition: Position,
   gameState: GameState,
   radius: number
 ): boolean {
+  const radiusSquared = radius * radius;
+
   for (const item of gameState.map.items) {
-    const distance = manhattanDistance(botPosition, item.position);
-    if (distance <= radius) {
+    const dx = botPosition.x - item.position.x;
+    const dy = botPosition.y - item.position.y;
+    const distSquared = dx * dx + dy * dy;
+
+    if (distSquared <= radiusSquared) {
       return true;
     }
   }
+
   return false;
 }
 
-/**
- * Kiểm tra va chạm giữa 2 hình chữ nhật (box collision)
- */
-function checkBoxCollision(
-  pos1: Position,
-  size1: number,
-  pos2: Position,
-  size2: number
-): boolean {
-  return (
-    pos1.x < pos2.x + size2 &&
-    pos1.x + size1 > pos2.x &&
-    pos1.y < pos2.y + size2 &&
-    pos1.y + size1 > pos2.y
-  );
-}
+// ============================================================================
+// MOVEMENT VALIDATION
+// ============================================================================
 
 /**
- * Kiểm tra xem có thể di chuyển đến vị trí predicted không
- * (với pixel-level precision)
+ * OPTIMIZED: Precise movement validation
  */
 export function canMoveToPositionPrecise(
   position: Position,
   gameState: GameState
 ): boolean {
-  // Check if within map bounds (pixel-based)
+  // Quick bounds check
   if (!isWithinBounds(position, gameState.map.width, gameState.map.height)) {
     return false;
   }
 
-  // Check for wall collision using unified system
+  // Check blocking (walls, chests, bombs)
   if (isBlocked(position, gameState)) {
     return false;
   }
 
   return true;
+}
+
+/**
+ * OPTIMIZED: Squared distance (avoids expensive sqrt)
+ */
+export function getDistanceSquared(pos1: Position, pos2: Position): number {
+  const dx = pos1.x - pos2.x;
+  const dy = pos1.y - pos2.y;
+  return dx * dx + dy * dy;
+}
+
+/**
+ * Regular distance (when actual distance is needed)
+ */
+export function getDistance(pos1: Position, pos2: Position): number {
+  return Math.sqrt(getDistanceSquared(pos1, pos2));
+}
+
+/**
+ * Call this periodically to clean up old cache entries
+ * Recommended: once per second or when bombs explode
+ */
+export function clearExplosionCache(): void {
+  explosionCache.clear();
 }

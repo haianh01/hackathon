@@ -134,7 +134,7 @@ function test1_PathWithBomb() {
   console.log("\n=== TEST 1: Pathfinding với bom tại (80, 40) ===");
   console.log("Start: BOT tại (40, 40)");
   console.log("Goal: Di chuyển đến (40, 80)");
-  console.log("Bomb: Tại (80, 40) với range=2, time=3000ms\n");
+  console.log("Bomb: Tại (80, 40) với flameRange=2, time=3000ms\n");
 
   const gameState = createMockGameState();
   const startPos = { x: 40, y: 40 };

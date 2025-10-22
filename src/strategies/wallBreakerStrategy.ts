@@ -60,10 +60,16 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     this.updateBombTracking(gameState);
 
-    // if (gameState.currentBot.bombCount <= 0) {
-    //   this.currentPlan = null; // Clear plan if no bombs
-    //   return null;
-    // }
+    // Cập nhật kiểm tra: tính toán số bom thực tế có thể đặt
+    const myBombsOnMap = gameState.map.bombs.filter(
+      (b) => b.ownerId === gameState.currentBot.id
+    ).length;
+    const availableBombs = gameState.currentBot.bombCount - myBombsOnMap;
+
+    if (availableBombs <= 0) {
+      this.currentPlan = null; // Xóa kế hoạch nếu không còn bom
+      return null;
+    }
 
     // PRIORITY 1: Check if we have an active plan and should continue following it
     console.log(`📋 Continuing existing bomb placement plan...`);

@@ -174,7 +174,7 @@ function isPositionInBombRange(
   gameState: GameState
 ): boolean {
   const CELL_SIZE = 40;
-  const PLAYER_SIZE = 30;
+  const PLAYER_SIZE = 35;
   const SAFETY_MARGIN = 5;
 
   // Quick check: center-to-center distance

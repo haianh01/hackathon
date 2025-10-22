@@ -76,7 +76,10 @@ export class GameEngine {
       ownerId: bombData.uid || bombData.ownerId,
       timeRemaining: bombData.timeRemaining ?? 5000,
       flameRange:
-        bombData.range || bombData.explosionRange || bombData.flameRange || 2,
+        bombData.flameRange ||
+        bombData.explosionRange ||
+        bombData.flameRange ||
+        2,
     };
 
     // Add to bombs array if not already present
@@ -124,7 +127,8 @@ export class GameEngine {
         position: { x: serverBombData.x, y: serverBombData.y },
         ownerId: serverBombData.uid,
         timeRemaining: serverBombData.timeRemaining ?? 5000,
-        flameRange: serverBombData.range || serverBombData.explosionRange || 2,
+        flameRange:
+          serverBombData.flameRange || serverBombData.explosionRange || 2,
       };
     }
   }

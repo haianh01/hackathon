@@ -18,14 +18,14 @@ export interface MovementState {
 }
 
 export class PositionPredictor {
-  private static readonly MOVE_STEP_SIZE = 3; // Server moves 3px per tick
+  private static readonly MOVE_STEP_SIZE = 1; // Server moves 1px per tick
   private static readonly MS_PER_MOVE = 17; // Server tickrate: 17ms (~59 ticks/sec)
 
   /**
    * Dự đoán vị trí hiện tại dựa trên vị trí confirm cuối cùng và thời gian trôi qua
    * @param lastConfirmed Vị trí được server confirm cuối cùng (pixel coordinates)
    * @param currentDirection Hướng đang di chuyển
-   * @param speed Tốc độ di chuyển (mặc định 1 = 3px/17ms)
+   * @param speed Tốc độ di chuyển (mặc định 1 = 1px/17ms)
    * @returns Vị trí dự đoán hiện tại (pixel coordinates)
    */
   public static predictCurrentPosition(
@@ -111,13 +111,13 @@ export class PositionPredictor {
   } {
     switch (direction) {
       case Direction.UP:
-        return { x: 0, y: -this.MOVE_STEP_SIZE }; // -3 pixels
+        return { x: 0, y: -this.MOVE_STEP_SIZE }; // -1 pixels
       case Direction.DOWN:
-        return { x: 0, y: this.MOVE_STEP_SIZE }; // +3 pixels
+        return { x: 0, y: this.MOVE_STEP_SIZE }; // +1 pixels
       case Direction.LEFT:
-        return { x: -this.MOVE_STEP_SIZE, y: 0 }; // -3 pixels
+        return { x: -this.MOVE_STEP_SIZE, y: 0 }; // -1 pixels
       case Direction.RIGHT:
-        return { x: this.MOVE_STEP_SIZE, y: 0 }; // +3 pixels
+        return { x: this.MOVE_STEP_SIZE, y: 0 }; // +1 pixels
       default:
         return { x: 0, y: 0 };
     }
