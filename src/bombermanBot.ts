@@ -572,6 +572,11 @@ export class BomberManBot {
   }
 
   private handleMove(decision: BotDecision): void {
+    console.log(
+      "%c🤪 ~ file: bombermanBot.ts:574 [] -> decision : ",
+      "color: #d09bcc",
+      decision
+    );
     if (!decision.target) {
       console.warn("⚠️ Move without target");
       return;

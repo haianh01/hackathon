@@ -438,7 +438,18 @@ export class EscapeStrategy extends BaseStrategy {
     if (escapeResult) {
       // ... (Logic lấy DirectionToTarget giữ nguyên)
       const { nextStep, target, direction, path } = escapeResult;
-
+      console.log(`🏃 EMERGENCY ESCAPE:`);
+      console.log(
+        `  Bot at: (${currentBot.position.x}, ${currentBot.position.y})`
+      );
+      console.log(
+        `  Next step: (${escapeResult.nextStep.x}, ${escapeResult.nextStep.y})`
+      );
+      console.log(`  Direction: ${escapeResult.direction}`);
+      console.log(
+        `  Target: (${escapeResult.target.x}, ${escapeResult.target.y})`
+      );
+      console.log(`  Path length: ${escapeResult.path.length}`);
       console.log(
         `🛤️ EMERGENCY PATHFOUND: Found path to safe zone at cell )`,
         JSON.stringify(escapeResult)

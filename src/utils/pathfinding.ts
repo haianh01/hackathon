@@ -669,7 +669,7 @@ export function findEscapePath(
 
         if (fullPath.length === 0) return null;
 
-        const pixelPath: Position[] = [cellToPixelCenter(startCell)];
+        const pixelPath: Position[] = [startPos];
         for (let i = 1; i < fullPath.length; i++) {
           pixelPath.push(cellToPixelCenter(fullPath[i]!));
         }
