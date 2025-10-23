@@ -169,6 +169,7 @@ export interface BotDecision {
   path?: Position[]; // Full path from pathfinding (for multi-step navigation)
   priority: number;
   reason: string;
+  nextStep?: Position;
 }
 
 export interface ItemCollectedEventData {

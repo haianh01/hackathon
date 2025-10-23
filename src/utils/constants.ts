@@ -45,6 +45,12 @@ export function pixelToCell(pixelPos: Position): Position {
     y: Math.floor(pixelPos.y / CELL_SIZE),
   };
 }
+export function toPixelTopLeft(pixelPos: Position): Position {
+  return {
+    x: Math.floor(pixelPos.x / CELL_SIZE) * CELL_SIZE,
+    y: Math.floor(pixelPos.y / CELL_SIZE) * CELL_SIZE,
+  };
+}
 
 /**
  * Convert cell indices to pixel coordinates (center of cell)
@@ -141,7 +147,7 @@ export function checkBoxCollision(
  */
 export function isBlocked(
   position: Position,
-  gameState: any,
+  gameState: GameState,
   objectSize: number = PLAYER_SIZE
 ): boolean {
   // Check walls collision
@@ -167,7 +173,7 @@ export function isBlocked(
  */
 export function canMoveTo(
   position: Position,
-  gameState: any,
+  gameState: GameState,
   objectSize: number = PLAYER_SIZE
 ): boolean {
   // 1. Check bounds with object size consideration

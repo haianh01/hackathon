@@ -453,7 +453,8 @@ export class EscapeStrategy extends BaseStrategy {
         `Escape (BFS) - pathfinding to nearest safe zone`,
         direction, // Hướng đi cho bước đầu tiên
         target, // Đích cuối cùng của toàn bộ đường đi
-        path // Truyền toàn bộ lộ trình cho bot thực thi
+        path, // Truyền toàn bộ lộ trình cho bot thực thi
+        escapeResult // ✅ Thêm escapeResult
       );
     }
 

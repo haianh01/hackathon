@@ -6,21 +6,15 @@ import {
   UserResponse,
   Position,
   Direction,
-  Bomber,
   GameState,
   BombExplodeEvent,
 } from "./types";
 import { SocketConnection } from "./connection/socketConnection";
 import { getDirectionToTarget } from "./utils/position";
-import { CELL_SIZE, isPositionInDangerZone, pixelToCellCenter } from "./utils";
-import {
-  getDistance,
-  isAtPosition,
-  pixelToCellIndex,
-} from "./utils/coordinates";
+import { CELL_SIZE, isPositionInDangerZone, pixelToCell } from "./utils";
+import { getDistance } from "./utils/coordinates";
 import { isBotFullyInCell } from "./utils/gameLogic";
 
-// Configuration constants
 const CONFIG = {
   BOT_LOGIC_INTERVAL: 300,
   BOMB_PLACED_DISTANCE: 5,
@@ -34,20 +28,31 @@ const CONFIG = {
   MOVE_STEP_SIZE: 1,
   MIN_LOGIC_DELAY: 50,
 
-  // New: Path validation and prediction
-  PATH_REVALIDATE_INTERVAL: 1000, // Recheck path every 1s
-  OBSTACLE_CHECK_DISTANCE: CELL_SIZE * 2, // Look ahead 2 cells
-  PREDICTION_STEPS: 3, // Predict 3 steps ahead
-  STUCK_DETECTION_THRESHOLD: 200, // 200ms without progress = stuck
-  STUCK_DISTANCE_THRESHOLD: 2, // Less than 2px movement = stuck
+  PATH_REVALIDATE_INTERVAL: 1000,
+  OBSTACLE_CHECK_DISTANCE: CELL_SIZE * 2,
+  PREDICTION_STEPS: 3,
+  STUCK_DETECTION_THRESHOLD: 200,
+  STUCK_DISTANCE_THRESHOLD: 2,
+
+  CELL_SIZE_PX: 40,
+  BOT_SIZE_PX: 35,
+  WAYPOINT_REACHED_THRESHOLD: 10, // ✅ Trong vòng 10px = đã đến waypoint
+
+  MAX_STUCK_TICKS: 5,
 } as const;
 
 interface PathState {
   currentPath: Position[] | null;
-  currentPathIndex: number;
+  currentWaypointIndex: number; // ✅ NEW: Index của waypoint đang đi đến
   pathTarget: Position | null;
-  pathCreatedAt: number; // Timestamp for path age tracking
-  lastValidatedAt: number; // Last time path was validated
+  pathCreatedAt: number;
+  lastValidatedAt: number;
+  waypointReachedFlag?: boolean;
+  targetPixelPosition: Position | null;
+  isMovingToWaypoint: boolean;
+
+  stuckTicks: number;
+  lastPixelPosition: Position | null;
 }
 
 interface MovementState {
@@ -71,7 +76,13 @@ interface BombState {
 }
 
 /**
- * Main Bot class - optimized for performance and maintainability
+ * ⭐ Bot with Waypoint Index Approach
+ *
+ * Key improvements:
+ * - Track which waypoint we're moving to (currentWaypointIndex)
+ * - Never go backwards in the path
+ * - Clear and easy to debug
+ * - Works perfectly with cell centers from pathfinding
  */
 export class BomberManBot {
   private readonly ai: BombermanAI;
@@ -82,16 +93,19 @@ export class BomberManBot {
   private isExecuting = false;
   private botLogicTimeout: NodeJS.Timeout | undefined;
   private nextLogicDelay: number = CONFIG.BOT_LOGIC_INTERVAL;
-  private readonly BASE_TICK_RATE = 300; // Fixed base rate
 
   private eventQueue: Array<() => void> = [];
-  // State management - grouped for better cache locality
+
   private pathState: PathState = {
     currentPath: null,
-    currentPathIndex: 0,
+    currentWaypointIndex: 0,
     pathTarget: null,
     pathCreatedAt: 0,
     lastValidatedAt: 0,
+    targetPixelPosition: null,
+    isMovingToWaypoint: false,
+    stuckTicks: 0,
+    lastPixelPosition: null,
   };
 
   private movementState: MovementState = {
@@ -114,14 +128,6 @@ export class BomberManBot {
     isWaitingForOwn: false,
   };
 
-  private currentPlan: {
-    phase: "MOVING_TO_TARGET";
-    path: Position[];
-    bombPosition: Position;
-    targetChests: number;
-    plannedAt: number;
-  } | null = null;
-
   constructor(serverAddress?: string, botToken?: string) {
     this.ai = new BombermanAI();
     this.gameEngine = new GameEngine();
@@ -133,13 +139,13 @@ export class BomberManBot {
   }
 
   public async initialize(): Promise<void> {
-    console.log("🚀 Initializing Bomberman Bot...");
+    console.log("🚀 Initializing Bomberman Bot (Waypoint Index Approach)...");
 
     try {
       await this.connectToServer();
       console.log("✅ Bot đã sẵn sàng!");
 
-      this.isRunning = true; // Set BEFORE setupBotLogic so tick() sees it
+      this.isRunning = true;
       this.setupBotLogic();
     } catch (error) {
       console.error("❌ Error during bot initialization:", error);
@@ -169,22 +175,12 @@ export class BomberManBot {
         this.isRunning = false;
       }
     });
-    // Position updates now handled in setupRealtimeEventCallbacks
   }
 
   private setupRealtimeEventCallbacks(): void {
-    // CRITICAL: Process bomb events IMMEDIATELY to avoid stale state
-    // Only update game state, let next tick handle reaction
     this.socketConnection.onNewBomb((data) => {
       console.log(`⚡ New bomb at (${data.x}, ${data.y}) ID: ${data.id}`);
       this.handleNewBomb(data);
-
-      // Force immediate re-evaluation on next tick if not currently executing
-      if (!this.isExecuting && this.pathState.currentPath) {
-        console.log(
-          "🔄 Bomb detected during movement, will revalidate path on next tick"
-        );
-      }
     });
 
     this.socketConnection.onBombExplode((data) => {
@@ -192,11 +188,14 @@ export class BomberManBot {
       this.handleBombExplode(data);
     });
 
-    // Queue position updates as they're just confirmations from server
     this.socketConnection.onPositionUpdate((x, y) => {
+      console.log(`💣bot(${x},${y}`);
+
+      this.gameEngine.updateBotPosition(x, y);
+      this.checkCellReached({ x, y });
+
       this.eventQueue.push(() => {
-        console.log(`📍 Position confirmed: (${x}, ${y})`);
-        this.gameEngine.updateBotPosition(x, y);
+        this.checkStuckState({ x, y });
       });
     });
 
@@ -230,582 +229,412 @@ export class BomberManBot {
   }
 
   setupBotLogic() {
-    console.log("✅ Event-driven bot logic initialized with dynamic delay.");
-    // Reset delay to default and start the first tick.
+    console.log("✅ Waypoint-based bot logic initialized.");
     this.nextLogicDelay = CONFIG.BOT_LOGIC_INTERVAL;
     this.tick();
   }
 
   private tick() {
-    // Clear any pending timeout to ensure this tick runs now and prevents duplicates.
-    if (this.botLogicTimeout) {
-      clearTimeout(this.botLogicTimeout);
-    }
+    try {
+      // Clear previous timeout
+      if (this.botLogicTimeout) {
+        clearTimeout(this.botLogicTimeout);
+      }
 
-    // If the previous tick is somehow still running, reschedule and exit.
-    if (this.isExecuting) {
-      if (this.isRunning) {
+      // ✅ Check running state FIRST
+      if (!this.isRunning) {
+        console.log("⏸️ Bot stopped, tick exiting");
+        return;
+      }
+
+      // ✅ Re-entrance guard
+      if (this.isExecuting) {
+        console.log("⚠️ Tick already executing, rescheduling");
         this.botLogicTimeout = setTimeout(
           () => this.tick(),
-          this.nextLogicDelay
+          this.nextLogicDelay || CONFIG.BOT_LOGIC_INTERVAL
+        );
+        return;
+      }
+
+      this.isExecuting = true;
+
+      // ✅ Handle flags FIRST
+      if (this.pathState.waypointReachedFlag) {
+        this.pathState.currentWaypointIndex++;
+        this.pathState.targetPixelPosition = null;
+        this.pathState.isMovingToWaypoint = false;
+        this.pathState.waypointReachedFlag = false;
+
+        console.log("🔄 Waypoint completed, recalculating...");
+      }
+
+      // ✅ Process queue with limit
+      const MAX_EVENTS_PER_TICK = 100;
+      let processedEvents = 0;
+
+      while (
+        this.eventQueue.length > 0 &&
+        processedEvents < MAX_EVENTS_PER_TICK
+      ) {
+        const event = this.eventQueue.shift();
+        if (event) {
+          event();
+          processedEvents++;
+        }
+      }
+
+      if (this.eventQueue.length > 0) {
+        console.warn(
+          `⚠️ Event queue still has ${this.eventQueue.length} pending events`
         );
       }
-      return;
-    }
 
-    this.isExecuting = true;
+      // ✅ Execute bot logic
+      this.executeBotLogic();
+    } catch (error) {
+      console.error("❌ Critical error in tick loop:", error);
+      // Emergency cleanup
+      this.socketConnection.stopContinuousMove();
+      this.clearPath();
+    } finally {
+      // ✅ ALWAYS unlock (even on error)
+      this.isExecuting = false;
 
-    // ✅ Process any pending events first
-    while (this.eventQueue.length > 0) {
-      const event = this.eventQueue.shift();
-      if (event) {
-        console.log("📨 Processing queued event");
-        event();
+      // ✅ Schedule next tick
+      if (this.isRunning) {
+        const delay = this.nextLogicDelay || CONFIG.BOT_LOGIC_INTERVAL;
+        this.botLogicTimeout = setTimeout(() => this.tick(), delay);
+
+        // Reset for next cycle
+        this.nextLogicDelay = CONFIG.BOT_LOGIC_INTERVAL;
       }
-    }
-
-    // Set a default delay for the next tick. This can be overridden by
-    // calculateDynamicDelay during the execution of the bot's logic.
-    this.nextLogicDelay = CONFIG.BOT_LOGIC_INTERVAL;
-
-    // ✅ Then run normal bot logic
-    this.executeBotLogic();
-
-    this.isExecuting = false;
-
-    // ✅ Schedule the next tick using the (potentially dynamic) delay
-    if (this.isRunning) {
-      this.botLogicTimeout = setTimeout(() => this.tick(), this.nextLogicDelay);
     }
   }
 
-  private executeBotLogic(): void {
-    // tick() already handles isExecuting flag, just check game state
-    if (!this.socketConnection.isGameRunning() || !this.isRunning) {
+  /**
+   * ✅ Check if bot is stuck
+   */
+  private checkStuckState(currentPos: Position): void {
+    if (!this.pathState.isMovingToWaypoint) {
+      this.pathState.stuckTicks = 0;
+      this.pathState.lastPixelPosition = null;
       return;
     }
 
-    try {
-      console.log("🤖 Executing bot logic...");
+    const lastPos = this.pathState.lastPixelPosition;
 
-      const currentBot = this.socketConnection.getMyBomberInfo();
-      const gameState = this.gameEngine.getGameState();
-
-      // Priority 1: Handle emergency escape (ALWAYS first!)
-      if (this.handleEmergencyEscape(currentBot!, gameState)) {
-        // In emergency, clear isWaitingForOwn if set
-        // We need to escape regardless of bomb count
-        if (this.bombState.isWaitingForOwn) {
-          console.log("⚠️ Emergency escape overrides bomb waiting state");
-        }
-        return;
-      }
-
-      // Priority 2: Handle waiting for own bomb (only if safe)
-      if (this.bombState.isWaitingForOwn) {
-        console.log("⏳ Waiting for own bomb to explode (in safe position).");
-        // Already safe, just use defensive strategy to stay safe
-        const defensiveDecision = this.ai.makeDefensiveDecision(gameState);
-        this.executeAction(defensiveDecision);
-        return;
-      }
-
-      // Priority 3: Normal path execution
-      this.handleNormalPathExecution(currentBot!, gameState);
-    } catch (err) {
-      console.error("❌ Error in bot logic:", err);
+    if (!lastPos) {
+      this.pathState.lastPixelPosition = { ...currentPos };
+      return;
     }
-  }
 
-  private handleEmergencyEscape(
-    currentBot: Bomber,
-    gameState: GameState
-  ): boolean {
-    if (!currentBot) return false;
+    const distance = getDistance(lastPos, currentPos);
 
-    const currentPos: Position = { x: currentBot.x, y: currentBot.y };
-    const isInDanger = isPositionInDangerZone(currentPos, gameState);
+    if (distance < 1) {
+      this.pathState.stuckTicks++;
 
-    // If not in danger, clear emergency state if exists
-    if (!isInDanger) {
-      if (this.emergencyState.escapePath || this.emergencyState.escapeTarget) {
-        console.log("✅ Bot is safe. Clearing emergency state.");
-        this.clearEmergencyState();
+      if (this.pathState.stuckTicks >= CONFIG.MAX_STUCK_TICKS) {
+        console.error(
+          `❌ Bot STUCK for ${this.pathState.stuckTicks} ticks at (${currentPos.x}, ${currentPos.y})`
+        );
+        console.error(
+          `   Target waypoint: (${this.pathState.targetPixelPosition?.x}, ${this.pathState.targetPixelPosition?.y})`
+        );
+
+        // Force recalculation
         this.socketConnection.stopContinuousMove();
         this.clearPath();
-        this.emergencyState.lastClearedAt = Date.now();
+
+        console.log("🔄 Forcing recalculation due to stuck state");
       }
-      return false;
-    }
-
-    // CRITICAL: We are in danger! Need to escape immediately
-    console.warn("🚨 Bot in danger zone! Initiating emergency escape.");
-
-    const { escapePath, escapeTarget } = this.emergencyState;
-
-    // If already have valid escape path, continue it
-    if (escapePath && escapeTarget) {
-      console.log("🏃 Continuing existing escape path.");
-      // Path will be handled by normal path execution
-      return true;
-    }
-
-    // Need to create new escape path
-    console.warn("🏃 Computing new escape path...");
-    this.bombState.lastBombCount = gameState.map.bombs.length;
-
-    const escapeDecision = this.ai.makeDecisionEscape(gameState);
-
-    if (escapeDecision.action === BotAction.MOVE && escapeDecision.target) {
-      this.emergencyState.escapeTarget = escapeDecision.target;
-      this.emergencyState.escapePath = escapeDecision.path || [
-        currentPos,
-        escapeDecision.target,
-      ];
-
-      console.log(
-        `🛤️ Emergency escape: ${this.emergencyState.escapePath.length} steps to safety`
-      );
-
-      this.executeAction(escapeDecision);
     } else {
-      console.error("❌ No escape path found! Stopping in place.");
-      this.executeAction({
-        action: BotAction.STOP,
-        reason: "No escape path found",
-        priority: 100,
-      } as any);
+      // Moving normally, reset counter
+      this.pathState.stuckTicks = 0;
+      this.pathState.lastPixelPosition = { ...currentPos };
     }
-
-    return true;
   }
 
-  private handleNormalPathExecution(
-    currentBot: Bomber,
+  /**
+   * ✅ Execute bot logic
+   */
+  private executeBotLogic(): void {
+    if (!this.isRunning) {
+      return;
+    }
+
+    const currentBot = this.gameEngine.getCurrentBot();
+    if (!currentBot) {
+      console.warn("⚠️ No bot found");
+      return;
+    }
+
+    const gameState = this.gameEngine.getGameState();
+
+    // Priority 1: Danger zone
+    if (isPositionInDangerZone(currentBot.position, gameState)) {
+      console.log("🚨 DANGER ZONE!");
+      this.checkImmediateThreat();
+      return;
+    }
+
+    // Priority 2: Continue to waypoint if already moving
+    if (
+      this.pathState.isMovingToWaypoint &&
+      this.pathState.targetPixelPosition
+    ) {
+      // Check if waypoint is still safe
+      if (
+        !isPositionInDangerZone(this.pathState.targetPixelPosition, gameState)
+      ) {
+        console.log("⚠️ Waypoint threatened! Recalculating...");
+        this.socketConnection.stopContinuousMove();
+        this.clearPath();
+      } else {
+        const target = this.pathState.targetPixelPosition;
+        console.log(
+          `🏃 Continue to waypoint [${this.pathState.currentWaypointIndex}]: (${target.x}, ${target.y})`
+        );
+        return;
+      }
+    }
+
+    // Priority 3: Calculate next waypoint
+    this.calculateNextWaypointMove(currentBot.position, gameState);
+  }
+
+  /**
+   * ⭐ Calculate and move to next waypoint
+   *
+   * This is the CORE logic for waypoint-based movement
+   */
+  private calculateNextWaypointMove(
+    currentBot: Position,
     gameState: GameState
   ): void {
-    const { lastClearedAt } = this.emergencyState;
+    console.log("🧠 Calculating next waypoint...");
 
-    if (
-      lastClearedAt &&
-      Date.now() - lastClearedAt < CONFIG.EMERGENCY_CLEAR_COOLDOWN_MS
-    ) {
-      console.log(
-        `⏳ Emergency cooldown active (${Date.now() - lastClearedAt}ms)`
-      );
+    const decision = this.ai.makeDecision(gameState);
+
+    if (!decision || !decision.target) {
+      console.log("❌ No decision from AI");
       return;
     }
 
-    this.bombState.lastBombCount = gameState.map.bombs.length;
+    const fullPath = decision.path;
+    if (!fullPath) {
+      console.log("❌ No path from AI");
+      this.handleEndOfPath(decision);
 
-    // If we don't have current bot info yet, skip path handling for now
-    if (!currentBot) {
       return;
     }
 
-    const currentPos: Position = { x: currentBot.x, y: currentBot.y };
+    // ✅ Check if this is a new path
+    const isNewPath = this.isNewPath(fullPath);
 
-    // Update movement tracking
-    this.updateMovementTracking(currentPos);
-
-    if (this.pathState.currentPath?.length && currentBot) {
-      // Check if path needs revalidation
-      // if (this.shouldRevalidatePath(gameState)) {
-      //   console.log("🔄 Path revalidation needed");
-      //   this.clearPath();
-      //   // Let next tick create new path
-      //   return;
-      // }
-
-      // Check if stuck
-      if (this.detectStuckState()) {
-        console.warn("⚠️ Stuck detected! Forcing path recalculation");
-        this.clearPath();
-        this.socketConnection.stopContinuousMove();
-        return;
-      }
-
-      const finalTarget =
-        this.pathState.pathTarget ??
-        this.pathState.currentPath[this.pathState.currentPath.length - 1];
-
+    if (isNewPath) {
+      console.log(`🗺️ New path received: ${fullPath.length} waypoints`);
       console.log(
-        "%c🤪 ~ file: bombermanBot.ts:428 [] -> finalTarget : ",
-        "color: #788135",
-        finalTarget
+        `   Path: ${fullPath.map((p) => `(${p.x},${p.y})`).join(" → ")}`
       );
-      if (
-        finalTarget &&
-        isAtPosition(currentBot, finalTarget, CONFIG.FINAL_TARGET_THRESHOLD)
-      ) {
-        console.log("✅ Reached final target. Clearing path.");
-        this.clearPath();
-        this.socketConnection.stopContinuousMove();
-        return;
-      }
 
-      console.log("Path in progress, continuing...");
-      const continueDecision: BotDecision = {
-        action: BotAction.MOVE,
-        path: this.pathState.currentPath,
-        target: this.pathState.pathTarget,
-        reason: "Continuing existing path",
-      } as BotDecision;
-      this.followPath(continueDecision);
-    } else {
-      (gameState as any).bombermanCurrentPlan = this.currentPlan;
-      const decision = this.ai.makeDecision(gameState);
-      this.executeAction(decision);
+      // Reset waypoint index for new path
+      this.pathState.currentPath = fullPath;
+      this.pathState.currentWaypointIndex = 0;
+      this.pathState.pathTarget = decision.target;
+      this.pathState.pathCreatedAt = Date.now();
     }
-  }
 
-  private executeAction(decision: BotDecision): void {
+    // ✅ Get next waypoint index
+    const nextWaypointIndex = this.pathState.currentWaypointIndex;
+
+    if (nextWaypointIndex >= fullPath.length) {
+      console.log("✅ Reached end of path!");
+      this.handleEndOfPath(decision);
+      return;
+    }
+
+    const nextWaypoint = fullPath[nextWaypointIndex];
+
+    // ✅ Check if already in this cell
+    const nextCell = fullPath[nextWaypointIndex];
+    const isFullyIn = isBotFullyInCell(currentBot, nextCell!);
+
+    if (isFullyIn) {
+      console.log(
+        `✅ Already in cell [${nextCell!.x}, ${nextCell!.y}], moving to next`
+      );
+      this.pathState.currentWaypointIndex++;
+      this.handleEndOfPath(decision);
+
+      return;
+    }
+
+    // ✅ Check if waypoint is safe
+    if (isPositionInDangerZone(nextWaypoint!, gameState)) {
+      console.log(`⚠️ Waypoint [${nextWaypointIndex}] is threatened!`);
+      this.clearPath();
+      return;
+    }
+
+    // ✅ Set target and move
     console.log(
-      `🤖 Action: ${decision.action} - ${decision.reason} (Priority: ${decision.priority})`
+      `➡️ Moving to waypoint [${nextWaypointIndex}]: (${nextWaypoint!.x}, ${
+        nextWaypoint!.y
+      }) `
     );
 
-    switch (decision.action) {
-      case BotAction.MOVE:
-        this.handleMoveAction(decision);
-        break;
+    this.pathState.targetPixelPosition = nextWaypoint!;
+    this.pathState.isMovingToWaypoint = true;
 
-      case BotAction.BOMB:
-        this.handleBombAction();
-        break;
+    // Execute move
+    const moveDecision = {
+      action: decision.action,
+      target: nextWaypoint,
+      reason: `Waypoint [${nextWaypointIndex}/${fullPath.length - 1}]`,
+      path: [currentBot, nextWaypoint!],
+      priority: 1000,
+    } as BotDecision;
 
-      case BotAction.STOP:
-      default:
-        this.clearPath();
-        this.socketConnection.stopContinuousMove();
-        break;
-    }
+    this.executeAction(moveDecision);
   }
 
-  private handleMoveAction(decision: BotDecision): void {
-    if (decision.path?.length! > 1) {
-      this.followPath(decision);
-    } else if (decision.target && decision.direction) {
-      this.followNextStep(decision);
-    } else if (decision.direction) {
-      this.clearPath();
-      this.socketConnection.startContinuousMove(decision.direction);
-    }
+  /**
+   * ✅ Check if path is new (different from current)
+   */
+  private isNewPath(newPath: Position[]): boolean {
+    if (!this.pathState.currentPath) return true;
+
+    const currentPath = this.pathState.currentPath;
+
+    // Different length = different path
+    if (currentPath.length !== newPath.length) return true;
+
+    // Check if first or last waypoint is different
+    const firstDifferent =
+      currentPath![0]!.x !== newPath[0]!.x ||
+      currentPath[0]!.y !== newPath[0]!.y;
+
+    const lastDifferent =
+      currentPath[currentPath.length - 1]!.x !==
+        newPath![newPath!.length! - 1]!.x ||
+      currentPath[currentPath.length - 1]!.y !== newPath[newPath.length - 1]!.y;
+
+    return firstDifferent || lastDifferent;
   }
 
-  private handleBombAction(): void {
+  /**
+   * ✅ Handle when reaching end of path
+   */
+  private handleEndOfPath(decision: BotDecision): void {
+    console.log(`📍 Reached end of path. Action: ${decision.action}`);
+
+    // ✅ Check if should place bomb
+    if (decision.action === BotAction.BOMB) {
+      console.log("💣 End of path - placing bomb");
+      this.handlePlaceBomb(decision);
+      return;
+    }
+
+    // ✅ Check if at bomb target
+    const currentBot = this.gameEngine.getCurrentBot();
+    if (currentBot && decision.target) {
+      const distance = getDistance(currentBot.position, decision.target);
+
+      if (distance <= 20) {
+        console.log("💣 At bomb target - placing bomb");
+        this.handlePlaceBomb(decision);
+        return;
+      }
+    }
+
+    console.log("✅ Path completed, no bomb action");
     this.clearPath();
-    this.socketConnection.stopContinuousMove();
-    this.socketConnection.placeBomb();
+  }
+
+  /**
+   * ✅ Execute action
+   */
+  private executeAction(decision: BotDecision): void {
+    switch (decision.action) {
+      case "MOVE":
+        this.handleMove(decision);
+        break;
+      case "BOMB":
+        this.handlePlaceBomb(decision);
+        break;
+      case "STOP":
+        console.log("⏸️ No action");
+        break;
+      default:
+        console.warn(`⚠️ Unknown action: ${decision.action}`);
+    }
+  }
+
+  private handleMove(decision: BotDecision): void {
+    if (!decision.target) {
+      console.warn("⚠️ Move without target");
+      return;
+    }
 
     const currentBot = this.gameEngine.getCurrentBot();
     if (!currentBot) return;
 
-    const snappedBombPos = pixelToCellCenter(currentBot.position);
+    const direction = getDirectionToTarget(
+      currentBot.position,
+      decision.target
+    );
 
-    // Check for duplicate prediction
-    if (
-      this.bombState.pendingPredicted &&
-      getDistance(this.bombState.pendingPredicted, snappedBombPos) < 10
-    ) {
-      console.warn("⏩ Skipping duplicate bomb prediction.");
-      return;
-    }
-
-    this.ai.markBombPlaced(snappedBombPos);
-    this.bombState.pendingPredicted = snappedBombPos;
-
-    const predictedBomb = {
-      x: snappedBombPos.x,
-      y: snappedBombPos.y,
-      flameRange: currentBot.flameRange || 2,
-      id: `predicted-${snappedBombPos.x}-${snappedBombPos.y}`,
-      ownerId: currentBot.id,
-    };
-
-    this.gameEngine.addBombRealtime(predictedBomb);
-
-    // Check if we need immediate escape
-    const gameState = this.gameEngine.getGameState();
-    if (isPositionInDangerZone(currentBot.position, gameState)) {
-      console.log(
-        "⚠️ Just placed bomb in danger zone, will escape on next tick"
-      );
-    }
-
-    // If no more bombs available, wait for this one to explode
-    if (currentBot.bombCount <= 1) {
-      this.bombState.isWaitingForOwn = true;
-      console.log("⏳ No more bombs, waiting for explosion.");
-    }
-  }
-  private followPath(decision: BotDecision): void {
-    const currentBot = this.gameEngine.getCurrentBot();
-    if (!currentBot || !decision.path || decision.path.length <= 1) {
-      return;
-    }
-
-    const isNewPath = this.isNewPath(decision);
-
-    if (isNewPath) {
-      // ... (Phần thiết lập trạng thái và reset stuck detection giữ nguyên)
-      console.log(
-        `🛤️ New path: ${decision.path.length} steps to (${decision.target?.x}, ${decision.target?.y})`
-      );
-      const now = Date.now();
-      this.pathState.currentPath = decision.path;
-      this.pathState.currentPathIndex = 0;
-      this.pathState.pathTarget = decision.target || null;
-      this.pathState.pathCreatedAt = now;
-      this.pathState.lastValidatedAt = now;
-
-      this.movementState.isStuck = false;
-      this.movementState.stuckCounter = 0;
-    }
-
-    const currentPos = currentBot.position;
-    let currentIndex = this.pathState.currentPathIndex;
-
-    // --- LOGIC MỚI: BỎ QUA WAYPOINT 0 NẾU BOT ĐÃ NẰM TRỌN TRONG Ô ---
-    if (currentIndex === 0 && this.pathState.currentPath!.length > 1) {
-      // 1. Lấy vị trí ô lưới (cell index) tương ứng với waypoint 0
-      const firstWaypointPixel = this.pathState.currentPath![0]!;
-      const firstWaypointCell = pixelToCellIndex(firstWaypointPixel); // Cần hàm này
-
-      // 2. Kiểm tra xem bot có nằm hoàn toàn trong ô lưới này không
-      const isFullyInCell = isBotFullyInCell(currentPos, firstWaypointCell);
-
-      if (isFullyInCell) {
-        console.log(
-          `⏭️ Bot nằm trọn trong ô của waypoint 0, chuyển sang waypoint 1.`
-        );
-        currentIndex = 1;
-        this.pathState.currentPathIndex = 1;
-      } else {
-        // Kiểm tra bổ sung (tùy chọn): Nếu vị trí trung tâm bot đã gần waypoint
-        const distToFirst = getDistance(currentPos, firstWaypointPixel);
-        if (distToFirst < 35) {
-          // Dùng lại ngưỡng cũ như một fallback hoặc tiêu chí phụ
-          console.log(
-            `⏭️ Vị trí tâm bot đủ gần waypoint 0 (dist: ${distToFirst.toFixed(
-              1
-            )}px) -> chuyển sang waypoint 1`
-          );
-          currentIndex = 1;
-          this.pathState.currentPathIndex = 1;
-        }
-      }
-    }
-    // -----------------------------------------------------------------
-
-    // Advance through reached waypoints
-    currentIndex = this.advanceWaypoints(currentPos, currentIndex);
-
-    if (currentIndex !== this.pathState.currentPathIndex) {
-      this.pathState.currentPathIndex = currentIndex;
-    }
-
-    const targetWaypoint = this.pathState.currentPath![currentIndex];
-    // ... (Phần kiểm tra targetWaypoint, Segment Move, và Final Target Check giữ nguyên)
-    // ...
-    // ...
-    // ...
-
-    // --- START OF FIX for stuck-on-escape bug --- (Giữ nguyên)
-    const prevWaypoint: Position =
-      currentIndex > 0
-        ? this.pathState.currentPath![currentIndex - 1]!
-        : currentPos;
-
-    let direction: Direction | undefined;
-
-    // Calculate segment direction
-    const segmentDx = targetWaypoint!.x - prevWaypoint.x;
-    const segmentDy = targetWaypoint!.y - prevWaypoint.y;
-
-    if (Math.abs(segmentDx) > Math.abs(segmentDy)) {
-      // Horizontal segment
-      direction = segmentDx > 0 ? Direction.RIGHT : Direction.LEFT;
-    } else if (Math.abs(segmentDy) > Math.abs(segmentDx)) {
-      // Vertical segment
-      direction = segmentDy > 0 ? Direction.DOWN : Direction.UP;
+    if (direction) {
+      console.log(`🏃 Moving ${direction}`);
+      this.socketConnection.startContinuousMove(direction);
+      this.movementState.currentDirection = direction;
     } else {
-      // Equal distance, use direct movement as fallback
-      console.warn("⚠️ Diagonal segment detected, using direct movement");
-      direction = getDirectionToTarget(currentPos, targetWaypoint!);
+      console.log("✅ At target");
     }
-
-    console.log(
-      `🔩 Segment Move: ${currentIndex + 1}/${
-        this.pathState.currentPath!.length
-      }, SegDir: ${direction}`
-    );
-    // --- END OF FIX ---
-
-    // Check if reached final target (Giữ nguyên)
-    const isAtLastWaypoint =
-      currentIndex >= this.pathState.currentPath!.length - 1;
-    if (
-      isAtLastWaypoint &&
-      this.pathState.pathTarget &&
-      isAtPosition(
-        currentPos,
-        this.pathState.pathTarget,
-        CONFIG.FINAL_TARGET_THRESHOLD
-      )
-    ) {
-      console.log("✅ Reached final path target");
-      this.clearPath();
-      this.socketConnection.stopContinuousMove();
-      return;
-    }
-
-    if (!direction) {
-      console.warn("⚠️ Invalid direction calculated, stopping");
-      this.socketConnection.stopContinuousMove();
-      this.clearPath();
-      return;
-    }
-
-    this.socketConnection.startContinuousMove(direction);
-
-    // Calculate dynamic delay based on distance to waypoint (Giữ nguyên)
-    this.calculateDynamicDelay(
-      currentPos,
-      targetWaypoint!,
-      currentBot.speed || 1
-    );
   }
 
-  private followNextStep(decision: BotDecision): void {
+  private handlePlaceBomb(decision: BotDecision): void {
     const currentBot = this.gameEngine.getCurrentBot();
+    if (!currentBot) return;
 
-    if (!currentBot || !decision.target || !decision.direction) {
-      console.log("⚠️ Missing bot, target, or direction");
+    const canPlaceBomb =
+      currentBot.bombCount > 0 && !this.bombState.isWaitingForOwn;
+
+    if (!canPlaceBomb) {
+      console.log("⏳ Cannot place bomb (no bombs available or waiting)");
       return;
     }
 
-    const currentPos = currentBot.position;
-    const nextWaypoint = decision.target;
-
-    if (isAtPosition(currentPos, nextWaypoint, 4)) {
-      console.log(
-        `✅ Reached next step at (${nextWaypoint.x}, ${nextWaypoint.y})`
-      );
-      this.socketConnection.stopContinuousMove();
-      this.clearPath();
-      return;
-    }
-
-    const direction = getDirectionToTarget(currentPos, nextWaypoint);
-    const distToTarget = getDistance(currentPos, nextWaypoint);
-
     console.log(
-      `🎯 Next step: ${direction}, Distance: ${distToTarget.toFixed(1)}px`
+      `💣 Placing bomb at (${currentBot.position.x}, ${currentBot.position.y})`
     );
 
-    this.socketConnection.startContinuousMove(direction);
-    this.calculateDynamicDelay(currentPos, nextWaypoint, currentBot.speed || 1);
+    this.socketConnection.placeBomb();
 
-    this.pathState.currentPath = [currentPos, nextWaypoint];
-    this.pathState.currentPathIndex = 0;
-    this.pathState.pathTarget = nextWaypoint;
-  }
+    this.bombState.isWaitingForOwn = true;
+    this.bombState.lastBombCount = currentBot.bombCount;
 
-  private calculateDynamicDelay(
-    from: Position,
-    to: Position,
-    speed: number
-  ): void {
-    const distance = getDistance(from, to);
-    const effectiveThreshold =
-      CONFIG.WAYPOINT_ADVANCE_THRESHOLD + CONFIG.REACH_MARGIN_PIXELS;
-    const distanceToThreshold = Math.max(0, distance - effectiveThreshold);
-
-    // Calculate time to reach waypoint threshold
-    // Formula: (distance / pixels_per_tick) * ms_per_tick
-    const pixelsPerTick = CONFIG.MOVE_STEP_SIZE * speed;
-    const timeToThreshold =
-      (distanceToThreshold / pixelsPerTick) * CONFIG.MOVE_INTERVAL_MS;
-
-    // Clamp between min delay and max interval
-    this.nextLogicDelay = Math.max(
-      CONFIG.MIN_LOGIC_DELAY,
-      Math.min(timeToThreshold, CONFIG.BOT_LOGIC_INTERVAL)
-    );
-
-    console.log(
-      `⏱️ Delay: ${this.nextLogicDelay.toFixed(0)}ms | Dist: ${distance.toFixed(
-        0
-      )}px -> ${distanceToThreshold.toFixed(0)}px to threshold`
-    );
-  }
-
-  private advanceWaypoints(currentPos: Position, startIndex: number): number {
-    if (!this.pathState.currentPath) return startIndex;
-
-    let index = startIndex;
-    const pathLength = this.pathState.currentPath.length;
-
-    // Advance through all reached waypoints in one pass
-    while (index < pathLength - 1) {
-      const waypoint = this.pathState.currentPath[index];
-      if (!waypoint) break;
-
-      if (
-        !isAtPosition(currentPos, waypoint, CONFIG.WAYPOINT_ADVANCE_THRESHOLD)
-      ) {
-        break;
-      }
-
-      console.log(
-        `✓ Waypoint ${index + 1}/${pathLength} at (${waypoint.x}, ${
-          waypoint.y
-        })`
-      );
-      index++;
-    }
-
-    return index;
-  }
-
-  private isNewPath(decision: BotDecision): boolean {
-    const { currentPath, pathTarget } = this.pathState;
-
-    if (!currentPath || !pathTarget || !decision.target || !decision.path) {
-      return true;
-    }
-
-    if (currentPath.length !== decision.path.length) {
-      return true;
-    }
-
-    const firstWaypoint = decision.path[0];
-    const currentFirstWaypoint = currentPath[0];
-
-    return (
-      !firstWaypoint ||
-      !currentFirstWaypoint ||
-      firstWaypoint.x !== currentFirstWaypoint.x ||
-      firstWaypoint.y !== currentFirstWaypoint.y
-    );
+    // Clear path after placing bomb
+    this.socketConnection.stopContinuousMove();
+    this.clearPath();
   }
 
   private clearPath(): void {
     this.pathState.currentPath = null;
-    this.pathState.currentPathIndex = 0;
+    this.pathState.currentWaypointIndex = 0;
     this.pathState.pathTarget = null;
     this.pathState.pathCreatedAt = 0;
     this.pathState.lastValidatedAt = 0;
+    this.pathState.targetPixelPosition = null;
+    this.pathState.isMovingToWaypoint = false;
 
-    // Reset movement tracking
     this.movementState.currentDirection = null;
     this.movementState.isStuck = false;
     this.movementState.stuckCounter = 0;
-  }
 
-  private clearEmergencyState(): void {
-    this.emergencyState.escapePath = null;
-    this.emergencyState.escapeTarget = null;
+    this.pathState.stuckTicks = 0;
+    this.pathState.lastPixelPosition = null;
   }
 
   private checkImmediateThreat(): void {
@@ -835,16 +664,37 @@ export class BomberManBot {
     this.executeAction(escapeDecision);
   }
 
+  private checkCellReached(currentPos: Position): void {
+    if (
+      !this.pathState.isMovingToWaypoint ||
+      !this.pathState.targetPixelPosition
+    ) {
+      return;
+    }
+
+    const targetCell = pixelToCell(this.pathState.targetPixelPosition);
+    const isFullyIn = isBotFullyInCell(currentPos, targetCell);
+
+    if (isFullyIn) {
+      console.log(`✅ Reached cell [${targetCell.x}, ${targetCell.y}]`);
+
+      // ✅ ALWAYS stop when reaching waypoint
+      this.socketConnection.stopContinuousMove();
+
+      // ✅ Set flag để tick handle
+      this.pathState.waypointReachedFlag = true;
+
+      console.log("🔄 Cell reached, will recalculate on next tick");
+    }
+  }
+
   private handleBombExplode(data: BombExplodeEvent): void {
     this.gameEngine.removeBombRealtime(data);
 
     if (data.uid === this.socketConnection.getMyBomberInfo()?.uid) {
       this.bombState.isWaitingForOwn = false;
-      console.log("✅ Own bomb exploded. Resuming normal operations.");
+      console.log("✅ Own bomb exploded");
     }
-
-    // No need to call executeBotLogic() here - the current tick will handle it
-    // after all queued events are processed
   }
 
   private processGameData(gameData: UserResponse): void {
@@ -860,21 +710,18 @@ export class BomberManBot {
     }
   }
 
-  private handleNewBomb(data: any): void {
+  private handleNewBomb(data: Position): void {
     this.gameEngine.addBombRealtime(data);
     const currentBot = this.gameEngine.getCurrentBot();
     const gameState = this.gameEngine.getGameState();
     if (currentBot && isPositionInDangerZone(currentBot.position, gameState)) {
-      // If we are ALREADY in danger, then an immediate escape is warranted.
-      console.log("⚠️ New bomb puts bot in danger! Will escape on next tick.");
-      // Don't call checkImmediateThreat() here - let next tick handle it
-      // to avoid interrupting current execution
+      console.log("⚠️ New bomb puts bot in danger!");
     }
   }
 
-  // Public API methods
+  // Public API
   public shutdown(): void {
-    console.log("🛑 Shutting down bot...");
+    console.log("🛑 Shutting down...");
     this.isRunning = false;
 
     if (this.botLogicTimeout) {
@@ -883,12 +730,12 @@ export class BomberManBot {
     }
 
     this.socketConnection.disconnect();
-    console.log("✅ Bot shut down completely.");
+    console.log("✅ Shutdown complete");
   }
 
   public stop(): void {
     this.isRunning = false;
-    console.log("⏸️ Bot paused.");
+    console.log("⏸️ Bot paused");
   }
 
   public isActive(): boolean {
@@ -917,7 +764,7 @@ export class BomberManBot {
   ): boolean {
     const success = this.ai.updateStrategyPriority(strategyName, priority);
     if (success) {
-      console.log(`🔄 Strategy '${strategyName}' priority → ${priority}`);
+      console.log(`🔄 Strategy '${strategyName}' → ${priority}`);
     } else {
       console.warn(`⚠️ Strategy '${strategyName}' not found`);
     }
@@ -926,7 +773,7 @@ export class BomberManBot {
 
   public resetAI(): void {
     this.ai.resetStrategies();
-    console.log("🔄 AI strategies reset to default");
+    console.log("🔄 AI reset");
   }
 
   public getGameStats() {
@@ -935,130 +782,5 @@ export class BomberManBot {
 
   public getGameState() {
     return this.gameEngine.getGameState();
-  }
-
-  /**
-   * OPTIMIZATION: Detect if bot is stuck (not making progress)
-   */
-  private detectStuckState(): boolean {
-    const { lastPosition, lastPositionTime } = this.movementState;
-
-    if (!lastPosition || !this.pathState.currentPath) {
-      return false;
-    }
-
-    const currentBot = this.gameEngine.getCurrentBot();
-    if (!currentBot) return false;
-
-    const currentPos = currentBot.position;
-    const timeDiff = Date.now() - lastPositionTime;
-
-    // Check if enough time has passed
-    if (timeDiff < CONFIG.STUCK_DETECTION_THRESHOLD) {
-      return false;
-    }
-
-    const distanceMoved = getDistance(lastPosition, currentPos);
-
-    // If moved less than threshold, increment stuck counter
-    if (distanceMoved < CONFIG.STUCK_DISTANCE_THRESHOLD) {
-      this.movementState.stuckCounter++;
-      console.warn(`⚠️ Stuck counter: ${this.movementState.stuckCounter}/3`);
-
-      // Stuck for 3 consecutive checks = definitely stuck
-      if (this.movementState.stuckCounter >= 3) {
-        this.movementState.isStuck = true;
-        return true;
-      }
-    } else {
-      // Making progress, reset counter
-      this.movementState.stuckCounter = 0;
-      this.movementState.isStuck = false;
-    }
-
-    return false;
-  }
-
-  /**
-   * OPTIMIZATION: Update movement tracking for stuck detection
-   */
-  private updateMovementTracking(currentPos: Position): void {
-    const now = Date.now();
-    const { lastPosition, lastPositionTime } = this.movementState;
-
-    // Update tracking every 200ms
-    if (
-      !lastPosition ||
-      now - lastPositionTime >= CONFIG.STUCK_DETECTION_THRESHOLD
-    ) {
-      this.movementState.lastPosition = { ...currentPos };
-      this.movementState.lastPositionTime = now;
-    }
-  }
-
-  /**
-   * OPTIMIZATION: Check if path should be revalidated
-   * Revalidate if:
-   * 1. Path is old (> 1 second)
-   * 2. New bombs appeared near the path
-   * 3. Haven't validated recently
-   */
-  private shouldRevalidatePath(gameState: GameState): boolean {
-    const { pathCreatedAt, lastValidatedAt, currentPath } = this.pathState;
-
-    if (!currentPath || currentPath.length === 0) {
-      return false;
-    }
-
-    const now = Date.now();
-
-    // Don't revalidate too frequently
-    if (now - lastValidatedAt < 500) {
-      return false;
-    }
-
-    // Path is old, should revalidate
-    if (now - pathCreatedAt > CONFIG.PATH_REVALIDATE_INTERVAL) {
-      console.log("🕐 Path is old, needs revalidation");
-      return true;
-    }
-
-    // Check if new bombs threaten the path
-    if (this.isPathThreatened(currentPath, gameState)) {
-      console.log("💣 Path threatened by bombs, needs revalidation");
-      return true;
-    }
-
-    // Update validation timestamp
-    this.pathState.lastValidatedAt = now;
-    return false;
-  }
-
-  /**
-   * OPTIMIZATION: Check if any bombs threaten the current path
-   */
-  private isPathThreatened(path: Position[], gameState: GameState): boolean {
-    const bombs = gameState.map.bombs || [];
-
-    // Check next few waypoints in the path
-    const waypointsToCheck = path.slice(
-      this.pathState.currentPathIndex,
-      this.pathState.currentPathIndex + CONFIG.PREDICTION_STEPS
-    );
-
-    for (const waypoint of waypointsToCheck) {
-      for (const bomb of bombs) {
-        const bombPos = { x: bomb.position.x, y: bomb.position.y };
-        const distance = getDistance(waypoint, bombPos);
-        const dangerRadius =
-          (bomb.flameRange || 2) * CELL_SIZE + CONFIG.BOMB_SAFETY_MARGIN;
-
-        if (distance < dangerRadius) {
-          return true;
-        }
-      }
-    }
-
-    return false;
   }
 }

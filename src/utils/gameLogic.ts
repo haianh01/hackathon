@@ -1,11 +1,7 @@
 import { GameState, Position, Bomb, Direction } from "../types";
 import { getPositionInDirection, getPositionsInLine } from "./position";
 import { computeExplosionCells } from "./pathfinding";
-import {
-  pixelToCellIndex,
-  createCellIndexKey,
-  cellToPixelCorner,
-} from "./coordinates";
+import { createCellIndexKey } from "./coordinates";
 import {
   CELL_SIZE,
   CHEST_SIZE,
@@ -470,46 +466,30 @@ export function clearExplosionCache(): void {
 }
 // Giả định hàm này kiểm tra nếu bot (có kích thước BOT_SIZE) nằm hoàn toàn trong ô lưới (cellIndex)
 export function isBotFullyInCell(
-  currentPos: Position,
+  botPos: Position,
   cellIndex: Position
 ): boolean {
-  // Lấy tọa độ góc trên bên trái của ô lưới
-  const cellCorner = cellToPixelCorner(cellIndex);
-
-  // Lấy tọa độ góc trên bên trái của bot
-  const botTopLeft = {
-    x: currentPos.x - PLAYER_SIZE / 2,
-    y: currentPos.y - PLAYER_SIZE / 2,
+  const cellTopLeft = {
+    x: cellIndex.x * CELL_SIZE,
+    y: cellIndex.y * CELL_SIZE,
   };
 
-  // Kiểm tra nếu botTopLeft nằm trong ô lưới
-  const isTopLeftIn =
-    botTopLeft.x >= cellCorner.x &&
-    botTopLeft.x < cellCorner.x + CELL_SIZE &&
-    botTopLeft.y >= cellCorner.y &&
-    botTopLeft.y < cellCorner.y + CELL_SIZE;
-
-  // Kiểm tra nếu botBottomRight nằm trong ô lưới
+  const botTopLeft = botPos; // Assuming botPos is top-left
   const botBottomRight = {
-    x: currentPos.x + PLAYER_SIZE / 2,
-    y: currentPos.y + PLAYER_SIZE / 2,
+    x: botPos.x + PLAYER_SIZE,
+    y: botPos.y + PLAYER_SIZE,
   };
 
-  const isBottomRightIn =
-    botBottomRight.x > cellCorner.x &&
-    botBottomRight.x <= cellCorner.x + CELL_SIZE &&
-    botBottomRight.y > cellCorner.y &&
-    botBottomRight.y <= cellCorner.y + CELL_SIZE;
+  // ✅ Bot hoàn toàn trong cell khi:
+  // Bot top-left >= cell top-left
+  // Bot bottom-right <= cell bottom-right
 
-  // Bot nằm hoàn toàn trong ô nếu cả 4 góc của bot đều nằm trong ô đó.
-  // Vì chúng ta đang kiểm tra từ tâm, việc botTopLeft nằm trong
-  // và botBottomRight nằm trong là đủ, nếu kích thước bot nhỏ hơn cell.
-  // Tuy nhiên, để đảm bảo 'hoàn toàn', ta có thể đơn giản hóa:
-  // Nếu (tọa độ min của bot > tọa độ min của cell) VÀ (tọa độ max của bot < tọa độ max của cell)
-  return (
-    botTopLeft.x >= cellCorner.x &&
-    botBottomRight.x <= cellCorner.x + CELL_SIZE &&
-    botTopLeft.y >= cellCorner.y &&
-    botBottomRight.y <= cellCorner.y + CELL_SIZE
-  );
+  const fullyInX =
+    botTopLeft.x >= cellTopLeft.x &&
+    botBottomRight.x <= cellTopLeft.x + CELL_SIZE;
+  const fullyInY =
+    botTopLeft.y >= cellTopLeft.y &&
+    botBottomRight.y <= cellTopLeft.y + CELL_SIZE;
+
+  return fullyInX && fullyInY;
 }

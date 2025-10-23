@@ -6,21 +6,10 @@ import {
   Position,
   Direction,
 } from "../types";
-import {
-  canMoveTo,
-  cellToPixel,
-  pixelToCell,
-  getPositionInDirection,
-} from "../utils";
+import { canMoveTo, getPositionInDirection, toPixelTopLeft } from "../utils";
 import { Pathfinding, canEscapeFromBomb } from "../utils/pathfinding";
 import { manhattanDistance } from "../utils/position";
 import { isPositionInDangerZone } from "../utils/gameLogic";
-
-// Helper function để snap position về grid - now using unified system
-function snapToGrid(pos: Position): Position {
-  const cellIndex = pixelToCell(pos);
-  return cellToPixel(cellIndex);
-}
 
 /**
  * Chiến thuật phá tường cải tiến - thông minh hơn trong việc tìm và phá tường
@@ -73,9 +62,6 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     // PRIORITY 1: Check if we have an active plan and should continue following it
     console.log(`📋 Continuing existing bomb placement plan...`);
-    const externalPlan = (gameState as any).bombermanCurrentPlan;
-
-    this.currentPlan = externalPlan;
 
     // Only proceed with plan-following if we actually have a plan and it doesn't need replanning
     if (this.currentPlan && !this.shouldReplan(gameState)) {
@@ -87,9 +73,9 @@ export class WallBreakerStrategy extends BaseStrategy {
         console.log(`✅ Reached bomb placement target! Placing bomb...`);
 
         // CRITICAL: Check if bomb already exists at this position
-        const snappedBombPos = snapToGrid(plan.bombPosition);
+        const snappedBombPos = toPixelTopLeft(plan.bombPosition);
         const existingBomb = gameState.map.bombs.find((bomb) => {
-          const snappedExistingPos = snapToGrid(bomb.position);
+          const snappedExistingPos = bomb.position;
           const distance = manhattanDistance(
             snappedExistingPos,
             snappedBombPos
@@ -286,7 +272,7 @@ export class WallBreakerStrategy extends BaseStrategy {
     bombPosition: Position,
     targetChests: Position[]
   ): void {
-    const snappedPos = snapToGrid(bombPosition);
+    const snappedPos = bombPosition;
     const bombKey = `${snappedPos.x},${snappedPos.y}`;
 
     this.placedBombs.set(bombKey, {
@@ -312,11 +298,11 @@ export class WallBreakerStrategy extends BaseStrategy {
       { dx: 1, dy: 0 }, // RIGHT
     ];
 
-    const snappedBombPos = snapToGrid(bombPosition);
+    const snappedBombPos = toPixelTopLeft(bombPosition);
 
     // Check chest at bomb position
     const chestAtBomb = (gameState.map.chests || []).find((c) => {
-      const snappedChest = snapToGrid(c.position);
+      const snappedChest = c.position;
       return (
         Math.abs(snappedChest.x - snappedBombPos.x) < 20 &&
         Math.abs(snappedChest.y - snappedBombPos.y) < 20
@@ -335,7 +321,7 @@ export class WallBreakerStrategy extends BaseStrategy {
         };
 
         const chest = (gameState.map.chests || []).find((c) => {
-          const snappedChest = snapToGrid(c.position);
+          const snappedChest = c.position;
           return (
             Math.abs(snappedChest.x - checkPos.x) < 20 &&
             Math.abs(snappedChest.y - checkPos.y) < 20
@@ -368,7 +354,7 @@ export class WallBreakerStrategy extends BaseStrategy {
     // 1. Sync with actual bombs on map (source of truth)
     const currentBombKeys = new Set(
       gameState.map.bombs.map((b) => {
-        const snapped = snapToGrid(b.position);
+        const snapped = b.position;
         return `${snapped.x},${snapped.y}`;
       })
     );
@@ -395,7 +381,7 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     // 4. Track NEW bombs that appear (including verification of our bombs)
     for (const bomb of gameState.map.bombs) {
-      const snapped = snapToGrid(bomb.position);
+      const snapped = bomb.position;
       const bombKey = `${snapped.x},${snapped.y}`;
 
       if (
@@ -569,7 +555,7 @@ export class WallBreakerStrategy extends BaseStrategy {
     const candidates: Position[] = [];
     const cellSize = 40;
 
-    const snappedCenter = snapToGrid(center);
+    const snappedCenter = toPixelTopLeft(center);
 
     // Tạo lưới các vị trí ứng viên
     for (let dx = -radius; dx <= radius; dx++) {
@@ -674,7 +660,7 @@ export class WallBreakerStrategy extends BaseStrategy {
     let safetyScore = 100; // Start
     const hitChests = new Set<string>();
 
-    const snappedBombPos = snapToGrid(position); // Use unified snap method
+    const snappedBombPos = toPixelTopLeft(position); // Use unified snap method
 
     // NEW: Check if position is currently in danger zone
     if (isPositionInDangerZone(position, gameState)) {
@@ -714,7 +700,7 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     // Đánh giá tại vị trí bom (sử dụng vị trí đã snap) - FIXED: Snap chest positions
     const chestAtBomb = (gameState.map.chests || []).find((c) => {
-      const snappedChest = snapToGrid(c.position);
+      const snappedChest = c.position;
       return (
         Math.abs(snappedChest.x - snappedBombPos.x) < 20 &&
         Math.abs(snappedChest.y - snappedBombPos.y) < 20
@@ -743,7 +729,7 @@ export class WallBreakerStrategy extends BaseStrategy {
 
         // Kiểm tra có chest không - FIXED: Snap chest positions to grid for comparison
         const chest = (gameState.map.chests || []).find((c) => {
-          const snappedChest = snapToGrid(c.position);
+          const snappedChest = c.position;
           return (
             Math.abs(snappedChest.x - checkPos.x) < 20 &&
             Math.abs(snappedChest.y - checkPos.y) < 20
@@ -751,6 +737,11 @@ export class WallBreakerStrategy extends BaseStrategy {
         });
 
         if (chest) {
+          console.log(
+            "%c🤪 ~ file: wallBreakerStrategy.ts:739 [] -> chest : ",
+            "color: #adf690",
+            chest
+          );
           const chestKey = `${chest.position.x},${chest.position.y}`;
           if (!hitChests.has(chestKey)) {
             hitChests.add(chestKey);
@@ -907,7 +898,7 @@ export class WallBreakerStrategy extends BaseStrategy {
     gameState: GameState
   ): boolean {
     // QUAN TRỌNG: Snap bomb position về grid (bom được căn về ô nó thuộc)
-    const snappedBombPos = snapToGrid(bombPosition);
+    const snappedBombPos = toPixelTopLeft(bombPosition);
 
     // Mô phỏng việc đặt bom (sử dụng vị trí đã snap)
     const simulatedBomb = {

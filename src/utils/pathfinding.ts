@@ -97,7 +97,7 @@ export class Pathfinding {
 
     // Early exit: already at goal
     if (startKey === goalKey) {
-      return [cellToPixelCenter(startCell)];
+      return [start];
     }
 
     // Check cache if enabled
@@ -586,17 +586,17 @@ export function findEscapePath(
     unsafe
   );
   const startKey = createCellIndexKey(startCell);
-  console.log(
-    "%c🤪 ~ file: pathfinding.ts:583 [] -> startKey : ",
-    "color: #3ce4c4",
-    startKey
-  );
 
   if (!unsafe.has(startKey)) {
+    console.log(
+      "%c🤪 ~ file: pathfinding.ts:583 [] -> startKey : ",
+      "color: #3ce4c4",
+      startKey
+    );
     return {
-      nextStep: startPos,
-      target: startPos,
-      path: [startPos],
+      nextStep: startPos, // ✅ Already at safe position (pixel)
+      target: startPos, // ✅
+      path: [startPos], // ✅
       direction: Direction.STOP,
     };
   }
@@ -669,7 +669,7 @@ export function findEscapePath(
 
         if (fullPath.length === 0) return null;
 
-        const pixelPath: Position[] = [startPos];
+        const pixelPath: Position[] = [cellToPixelCenter(startCell)];
         for (let i = 1; i < fullPath.length; i++) {
           pixelPath.push(cellToPixelCenter(fullPath[i]!));
         }
@@ -678,7 +678,7 @@ export function findEscapePath(
         const direction = getDirectionToTarget(startPos, nextTarget);
 
         return {
-          nextStep: nextTarget,
+          nextStep: startPos,
           target: pixelPath[pixelPath.length - 1]!,
           path: pixelPath,
           direction,

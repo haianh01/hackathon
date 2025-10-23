@@ -4,6 +4,7 @@ import {
   Position,
   BotAction,
   Direction,
+  EscapePathResult,
 } from "../types";
 
 /**
@@ -40,7 +41,8 @@ export abstract class BaseStrategy implements BotStrategy {
     reason: string,
     direction?: Direction,
     target?: Position,
-    path?: Position[]
+    path?: Position[],
+    escapeResult?: EscapePathResult
   ): BotDecision {
     const decision: BotDecision = { action, priority, reason };
 
