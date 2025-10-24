@@ -378,7 +378,7 @@ export class EscapeStrategy extends BaseStrategy {
       JSON.stringify(gameState.map.bombs)
     );
     const dangerousBombs = gameState.map.bombs
-      .filter((b) => isPositionInDangerZone(currentPos, gameState)) // Giả định hàm này kiểm tra nguy hiểm từ 1 bomb
+      .filter((b) => isPositionInDangerZone(b.position, gameState)) // Giả định hàm này kiểm tra nguy hiểm từ 1 bomb
       .sort((a, b) => a.timeRemaining - b.timeRemaining); // Ưu tiên bom sắp nổ
 
     const dangerousBomb = dangerousBombs[0];

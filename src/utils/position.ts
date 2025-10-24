@@ -115,6 +115,69 @@ export function getDirectionToTarget(
   }
 }
 
+// Chuyển hướng sang vector
+function directionToVector(dir: Direction): any {
+  switch (dir) {
+    case "UP":
+      return { x: 0, y: -1 };
+    case "DOWN":
+      return { x: 0, y: 1 };
+    case "LEFT":
+      return { x: -1, y: 0 };
+    case "RIGHT":
+      return { x: 1, y: 0 };
+  }
+}
+
+// Kiểm tra xem hướng tiếp theo có vuông góc 90° với hướng hiện tại không
+function isRightAngleTurn(current: Direction, next: Direction): boolean {
+  const v1 = directionToVector(current);
+  const v2 = directionToVector(next);
+  const dot = v1!.x * v2!.x + v1!.y * v2!.y;
+  return dot === 0; // 0 nghĩa là vuông góc
+}
+
+function getDirection(from: Position, to: Position): Direction {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx > 0 ? Direction.RIGHT : Direction.LEFT;
+  } else if (Math.abs(dy) > 0) {
+    return dy > 0 ? Direction.DOWN : Direction.UP;
+  }
+  return Direction.UP; // default
+}
+
+export function isNextTurnRightAngle(path: Position[]): boolean {
+  if (path.length < 3) return false;
+
+  const d1 = getDirection(path[0]!, path[1]!);
+  const d2 = getDirection(path[1]!, path[2]!);
+  return isRightAngleTurn(d1, d2);
+}
+
+/**
+ * Tính góc giữa 2 hướng di chuyển
+ * @returns 0, 90, 180, hoặc 270
+ */
+export function angleBetween(dir1: Direction, dir2: Direction): number {
+  if (dir1 === dir2) return 0;
+
+  const opposites = {
+    [Direction.UP]: Direction.DOWN,
+    [Direction.DOWN]: Direction.UP,
+    [Direction.LEFT]: Direction.RIGHT,
+    [Direction.RIGHT]: Direction.LEFT,
+  } as any;
+
+  // Nếu hai hướng ngược nhau → 180°
+
+  if (opposites[dir1] === dir2) return 180;
+
+  // Nếu không trùng, không ngược → 90°
+  return 90;
+}
+
 /**
  * Lấy hướng di chuyển chính xác dựa trên hai bước (cell index) liên tiếp trong một đường đi.
  * Hàm này đáng tin cậy hơn getDirectionToTarget vì nó không bị ảnh hưởng bởi sự trôi/lệch pixel.

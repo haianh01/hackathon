@@ -284,7 +284,7 @@ export class BombermanAI {
       // new BombStrategy(), // 80 - Place bombs strategically
       // new AttackStrategy(), // 80 - Attack enemies
       new DefensiveStrategy(), // 70 - Play defensively
-      // new CollectStrategy(), // 60 - Collect items
+      new CollectStrategy(), // 60 - Collect items
       new WallBreakerStrategy(), // 50 - Break walls
       // new ExploreStrategy(), // 40 - Explore the map
       // new SmartNavigationStrategy(), // 30 - Navigate intelligently

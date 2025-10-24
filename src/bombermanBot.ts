@@ -10,13 +10,18 @@ import {
   BombExplodeEvent,
 } from "./types";
 import { SocketConnection } from "./connection/socketConnection";
-import { getDirectionToTarget } from "./utils/position";
-import { CELL_SIZE, isPositionInDangerZone, pixelToCell } from "./utils";
+import { angleBetween, getDirectionFromPathStep } from "./utils/position";
+import {
+  CELL_SIZE,
+  isPositionInDangerZone,
+  pixelToCell,
+  PLAYER_SIZE,
+} from "./utils";
 import { getDistance } from "./utils/coordinates";
 import { isBotFullyInCell } from "./utils/gameLogic";
 
 const CONFIG = {
-  BOT_LOGIC_INTERVAL: 300,
+  BOT_LOGIC_INTERVAL: 400,
   BOMB_PLACED_DISTANCE: 5,
   BOMB_SAFETY_MARGIN: 80,
   PLAYER_REACH_THRESHOLD: CELL_SIZE / 2,
@@ -385,7 +390,7 @@ export class BomberManBot {
     ) {
       // Check if waypoint is still safe
       if (
-        !isPositionInDangerZone(this.pathState.targetPixelPosition, gameState)
+        isPositionInDangerZone(this.pathState.targetPixelPosition, gameState)
       ) {
         console.log("⚠️ Waypoint threatened! Recalculating...");
         this.socketConnection.stopContinuousMove();
@@ -457,7 +462,7 @@ export class BomberManBot {
     const nextWaypoint = fullPath[nextWaypointIndex];
 
     // ✅ Check if already in this cell
-    const nextCell = fullPath[nextWaypointIndex];
+    const nextCell = pixelToCell(fullPath[nextWaypointIndex]!);
     const isFullyIn = isBotFullyInCell(currentBot, nextCell!);
 
     if (isFullyIn) {
@@ -492,7 +497,7 @@ export class BomberManBot {
       action: decision.action,
       target: nextWaypoint,
       reason: `Waypoint [${nextWaypointIndex}/${fullPath.length - 1}]`,
-      path: [currentBot, nextWaypoint!],
+      path: [...fullPath],
       priority: 1000,
     } as BotDecision;
 
@@ -583,12 +588,57 @@ export class BomberManBot {
     }
 
     const currentBot = this.gameEngine.getCurrentBot();
+    console.log(this.pathState!);
     if (!currentBot) return;
-
-    const direction = getDirectionToTarget(
-      currentBot.position,
-      decision.target
+    const currentBotBR = {
+      x: currentBot.position.x + PLAYER_SIZE,
+      y: currentBot.position.y + PLAYER_SIZE,
+    };
+    let direction = getDirectionFromPathStep(
+      pixelToCell(currentBot.position),
+      pixelToCell(
+        this.pathState!.currentPath![this.pathState.currentWaypointIndex!]!
+      )
     );
+    console.log(
+      "%c🤪 ~601 [] -> direction : ",
+      "color: #ba298d",
+      direction,
+      this.pathState!.currentPath!.length
+    );
+    if (
+      this.pathState!.currentPath!.length &&
+      !isBotFullyInCell(currentBot.position, pixelToCell(currentBot.position))
+    ) {
+      const nextDir = getDirectionFromPathStep(
+        pixelToCell(currentBotBR),
+        pixelToCell(currentBot.position)
+      );
+
+      const turnAngle = angleBetween(direction, nextDir);
+      console.log("nextDir", nextDir);
+      if (turnAngle === 90 && nextDir !== "STOP") {
+        // Chỉ rẽ khi bot đã nằm hoàn toàn trong ô hiện tại
+
+        direction = nextDir;
+      } else {
+        direction = getDirectionFromPathStep(
+          pixelToCell(currentBot.position),
+          pixelToCell(
+            this.pathState!.currentPath![this.pathState.currentWaypointIndex!]!
+          )
+        );
+        console.log("getDirectionToTarget", direction);
+      }
+    } else {
+      direction = getDirectionFromPathStep(
+        pixelToCell(currentBot.position),
+        pixelToCell(
+          this.pathState!.currentPath![this.pathState.currentWaypointIndex!]!
+        )
+      );
+      console.log("getDirectionToTarget else", direction);
+    }
 
     if (direction) {
       console.log(`🏃 Moving ${direction}`);
@@ -655,14 +705,11 @@ export class BomberManBot {
     console.log(`🏃 EMERGENCY ESCAPE: ${escapeDecision.reason}`);
 
     if (escapeDecision.target) {
-      this.emergencyState.escapeTarget = escapeDecision.target;
-      this.emergencyState.escapePath = escapeDecision.path || [
-        currentBot.position,
-        escapeDecision.target,
-      ];
-
+      this.pathState.pathTarget = escapeDecision.target;
+      this.pathState.currentPath = escapeDecision.path!;
+      this.pathState.currentWaypointIndex = 0;
       console.log(
-        `🛤️ Emergency path: ${this.emergencyState.escapePath.length} steps`
+        `🛤️ Emergency path: ${this.pathState.currentPath!.length} steps`
       );
     }
 
@@ -689,7 +736,10 @@ export class BomberManBot {
       // ✅ Set flag để tick handle
       this.pathState.waypointReachedFlag = true;
 
-      console.log("🔄 Cell reached, will recalculate on next tick");
+      console.log(
+        "🔄 Cell reached, will recalculate on next tick",
+        this.pathState
+      );
     }
   }
 

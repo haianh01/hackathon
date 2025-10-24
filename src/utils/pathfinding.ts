@@ -23,6 +23,7 @@ import {
   MOVE_STEP_SIZE,
   MOVE_INTERVAL_MS,
 } from "./constants";
+import { isBotFullyInCell } from "./gameLogic";
 
 const PATHFINDING_CONFIG = {
   MAX_VISITS_MULTIPLIER: 4,
@@ -150,6 +151,7 @@ export class Pathfinding {
       if (currentKey === goalKey) {
         const path = this.reconstructPath(cameFrom, current);
         // ✅ CORRECT: Convert to cell centers (not top-left!)
+        path.shift();
         const pixelPath = path.map((cellIndex) => ({
           x: cellIndex.x * CELL_SIZE + CELL_SIZE / 2,
           y: cellIndex.y * CELL_SIZE + CELL_SIZE / 2,
@@ -389,38 +391,31 @@ export class Pathfinding {
 /**
  *  Compute explosion cells with caching
  */
+/**
+ * Tính toàn bộ các ô sẽ bị ảnh hưởng bởi bom trên bản đồ.
+ * Bao gồm cả chính ô đặt bom.
+ */
 export function computeExplosionCells(
   bomb: Bomb,
   gameState: GameState
 ): Set<string> {
-  const bombCell = pixelToCell(bomb.position);
-  const cacheKey = `${bombCell.x},${bombCell.y},${bomb.flameRange}`;
-
-  // Check cache
-  // const cached = explosionCache.get(cacheKey);
-  // if (cached && Date.now() - cached.timestamp < PATHFINDING_CONFIG.CACHE_TTL) {
-  //   return cached.cells;
-  // }
-
   const unsafe = new Set<string>();
-  const bombKey = createCellIndexKey(bombCell);
-  unsafe.add(bombKey);
 
-  // Pre-compute blocking cells for faster lookup
+  // Precompute tường và chest
   const solidWalls = new Set<string>();
   const destructibles = new Set<string>();
 
   for (const wall of gameState.map.walls) {
-    const cellIdx = pixelToCell(wall.position);
-    solidWalls.add(createCellIndexKey(cellIdx));
+    const cell = pixelToCell(wall.position);
+    solidWalls.add(createCellIndexKey(cell));
   }
 
   for (const chest of gameState.map.chests || []) {
-    const cellIdx = pixelToCell(chest.position);
-    destructibles.add(createCellIndexKey(cellIdx));
+    const cell = pixelToCell(chest.position);
+    destructibles.add(createCellIndexKey(cell));
   }
 
-  // Calculate explosion in 4 directions
+  // 4 hướng nổ: lên, xuống, trái, phải
   const directions = [
     { x: 0, y: -1 }, // UP
     { x: 0, y: 1 }, // DOWN
@@ -431,45 +426,39 @@ export function computeExplosionCells(
   const maxCellX = Math.floor(gameState.map.width / CELL_SIZE);
   const maxCellY = Math.floor(gameState.map.height / CELL_SIZE);
 
-  for (const dir of directions) {
-    for (let i = 1; i <= (bomb.flameRange || 2); i++) {
-      const currentCell = {
-        x: bombCell.x + dir.x * i,
-        y: bombCell.y + dir.y * i,
-      };
+  // 🔥 Lặp qua tất cả bom trên bản đồ
+  for (const bomb of gameState.map.bombs) {
+    const bombCell = pixelToCell(bomb.position);
+    const bombKey = createCellIndexKey(bombCell);
+    unsafe.add(bombKey); // ô trung tâm luôn nguy hiểm
 
-      // Bounds check
-      if (
-        currentCell.x < 0 ||
-        currentCell.x >= maxCellX ||
-        currentCell.y < 0 ||
-        currentCell.y >= maxCellY
-      ) {
-        break;
-      }
+    for (const dir of directions) {
+      for (let i = 1; i <= (bomb.flameRange || 2); i++) {
+        const currentCell = {
+          x: bombCell.x + dir.x * i,
+          y: bombCell.y + dir.y * i,
+        };
 
-      const cellKey = createCellIndexKey(currentCell);
+        // Giới hạn bản đồ
+        if (
+          currentCell.x < 0 ||
+          currentCell.x >= maxCellX ||
+          currentCell.y < 0 ||
+          currentCell.y >= maxCellY
+        )
+          break;
 
-      // Solid wall blocks explosion completely
-      if (solidWalls.has(cellKey)) {
-        break;
-      }
+        const cellKey = createCellIndexKey(currentCell);
 
-      // Destructible blocks explosion but gets destroyed
-      if (destructibles.has(cellKey)) {
+        // Nếu là tường đặc → dừng tia nổ
+        if (solidWalls.has(cellKey)) break;
+
+        // Nếu là chest → bị phá hủy, dừng luôn sau đó
         unsafe.add(cellKey);
-        break;
+        if (destructibles.has(cellKey)) break;
       }
-
-      unsafe.add(cellKey);
     }
   }
-
-  // Cache result
-  explosionCache.set(cacheKey, {
-    cells: unsafe,
-    timestamp: Date.now(),
-  });
 
   return unsafe;
 }
@@ -573,32 +562,18 @@ export function findEscapePath(
   gameState: GameState
 ): EscapePathResult {
   const startCell = pixelToCell(startPos);
-  console.log(
-    "%c🤪 ~ file: pathfinding.ts:575 [] -> startCell : ",
-    "color: #316a35",
-    startCell
-  );
 
   const unsafe = computeExplosionCells(bomb, gameState);
-  console.log(
-    "%c🤪 ~ file: pathfinding.ts:582 [] -> unsafe : ",
-    "color: #865637",
-    unsafe
-  );
+
   const startKey = createCellIndexKey(startCell);
 
   if (!unsafe.has(startKey)) {
-    console.log(
-      "%c🤪 ~ file: pathfinding.ts:583 [] -> startKey : ",
-      "color: #3ce4c4",
-      startKey
-    );
-    return {
-      nextStep: startPos, // ✅ Already at safe position (pixel)
-      target: startPos, // ✅
-      path: [startPos], // ✅
-      direction: Direction.STOP,
-    };
+    // return {
+    //   nextStep: startPos, // ✅ Already at safe position (pixel)
+    //   target: startPos, // ✅
+    //   path: [startPos], // ✅
+    //   direction: Direction.STOP,
+    // };
   }
 
   const queue: { cell: Position; steps: number }[] = [
@@ -669,16 +644,16 @@ export function findEscapePath(
 
         if (fullPath.length === 0) return null;
 
-        const pixelPath: Position[] = [startPos];
+        const pixelPath: Position[] = [];
         for (let i = 1; i < fullPath.length; i++) {
           pixelPath.push(cellToPixelCenter(fullPath[i]!));
         }
 
-        const nextTarget = pixelPath[1]!;
+        const nextTarget = pixelPath[0]!;
         const direction = getDirectionToTarget(startPos, nextTarget);
 
         return {
-          nextStep: startPos,
+          nextStep: cellToPixelCenter(pixelPath[0]!),
           target: pixelPath[pixelPath.length - 1]!,
           path: pixelPath,
           direction,

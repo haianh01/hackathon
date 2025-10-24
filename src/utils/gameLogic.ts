@@ -41,7 +41,7 @@ function getCachedExplosionCells(
   bomb: Bomb,
   gameState: GameState
 ): Set<string> {
-  const bombKey = `${bomb.position.x},${bomb.position.y},${bomb.flameRange}`;
+  const bombKey = `${bomb.position.x},${bomb.position.y}`;
   const cached = explosionCache.get(bombKey);
 
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -120,6 +120,7 @@ export function isPositionInDangerZone(
   }
 
   const cellIndex = pixelToCell(position);
+
   const cellKey = createCellIndexKey(cellIndex);
 
   // Early exit if no bombs
