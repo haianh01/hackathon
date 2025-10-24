@@ -5,11 +5,13 @@ import {
   BotAction,
   Position,
   Direction,
+  Chest,
 } from "../types";
 import { canMoveTo, getPositionInDirection, toPixelTopLeft } from "../utils";
 import { Pathfinding, canEscapeFromBomb } from "../utils/pathfinding";
 import { manhattanDistance } from "../utils/position";
 import { isPositionInDangerZone } from "../utils/gameLogic";
+import { calculatePriority } from "./calculatePriority";
 
 /**
  * Chiến thuật phá tường cải tiến - thông minh hơn trong việc tìm và phá tường
@@ -66,7 +68,10 @@ export class WallBreakerStrategy extends BaseStrategy {
     // Only proceed with plan-following if we actually have a plan and it doesn't need replanning
     if (this.currentPlan && !this.shouldReplan(gameState)) {
       const plan = this.currentPlan; // local non-null alias
-      const distanceToTarget = manhattanDistance(currentPos, plan.bombPosition);
+      const distanceToTarget = manhattanDistance(
+        currentPos,
+        toPixelTopLeft(plan.bombPosition)
+      );
 
       // Check if reached target → BOMB
       if (distanceToTarget <= 20) {
@@ -75,12 +80,13 @@ export class WallBreakerStrategy extends BaseStrategy {
         // CRITICAL: Check if bomb already exists at this position
         const snappedBombPos = toPixelTopLeft(plan.bombPosition);
         const existingBomb = gameState.map.bombs.find((bomb) => {
-          const snappedExistingPos = bomb.position;
-          const distance = manhattanDistance(
-            snappedExistingPos,
-            snappedBombPos
-          );
-          return distance < 20;
+          const snappedExistingPos = toPixelTopLeft(bomb.position);
+          if (
+            snappedBombPos.x === snappedExistingPos.x &&
+            snappedBombPos.y === snappedExistingPos.y
+          )
+            return true;
+          return false;
         });
 
         if (existingBomb) {
@@ -145,26 +151,23 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     // PRIORITY 2: No plan or need to replan - create new plan
     console.log(`📋 Creating new bomb placement plan...`);
+    const targetedChestKeys = new Set<string>();
+    for (const bombInfo of this.placedBombs.values()) {
+      for (const target of bombInfo.targetChests) {
+        const key = `${Math.round(target.x)},${Math.round(target.y)}`;
+        targetedChestKeys.add(key);
+      }
+    }
 
     // Find available chests
     const allChests = (gameState.map.chests || []).slice();
+    // Bước 2: Lọc rương nhanh hơn
     const availableChests = allChests.filter((chest) => {
-      const chestKey = `${chest.position.x},${chest.position.y}`;
+      const key = `${chest.position.x},${chest.position.y}`;
 
-      // Skip if already destroyed
-      if (this.destroyedChests.has(chestKey)) return false;
-
-      // Skip if currently targeted by active bomb
-      for (const bombInfo of this.placedBombs.values()) {
-        const isTargeted = bombInfo.targetChests.some(
-          (target) =>
-            Math.abs(target.x - chest.position.x) < 20 &&
-            Math.abs(target.y - chest.position.y) < 20
-        );
-        if (isTargeted) return false;
-      }
-
-      return true;
+      // Bỏ qua nếu rương đã bị phá hoặc đang bị bom nhắm đến
+      return !targetedChestKeys.has(key);
+      // return !this.destroyedChests.has(key) && !targetedChestKeys.has(key);
     });
 
     if (availableChests.length === 0) {
@@ -227,7 +230,8 @@ export class WallBreakerStrategy extends BaseStrategy {
         finalPriority,
         `Immediate bomb (${bestPosition.chestsCount} chests)`,
         Direction.STOP,
-        bestPosition.position
+        bestPosition.position,
+        [bestPosition.position]
       );
     }
     // Find path to optimal position
@@ -415,7 +419,7 @@ export class WallBreakerStrategy extends BaseStrategy {
    */
   private findOptimalBombPosition(
     gameState: GameState,
-    availableChests?: any[]
+    availableChests?: Chest[]
   ): {
     position: Position;
     score: number;
@@ -430,18 +434,18 @@ export class WallBreakerStrategy extends BaseStrategy {
     if (!chests.length) return null;
 
     // 1️⃣ Cache
-    if (
-      this.cachedBestPosition &&
-      currentTime - this.lastEvaluationTime < this.cacheDuration
-    ) {
-      const cached = this.evaluateBombPosition(
-        this.cachedBestPosition,
-        gameState
-      );
-      if (cached && cached.chestsCount > 0) {
-        return { ...cached, position: this.cachedBestPosition };
-      }
-    }
+    // if (
+    //   this.cachedBestPosition &&
+    //   currentTime - this.lastEvaluationTime < this.cacheDuration
+    // ) {
+    //   const cached = this.evaluateBombPosition(
+    //     this.cachedBestPosition,
+    //     gameState
+    //   );
+    //   if (cached && cached.chestsCount > 0) {
+    //     return { ...cached, position: this.cachedBestPosition };
+    //   }
+    // }
 
     // 3️⃣ Evaluate current position first
     const currentEval = this.evaluateBombPosition(currentPos, gameState);
@@ -490,10 +494,13 @@ export class WallBreakerStrategy extends BaseStrategy {
         continue;
       }
 
+      // const path = Pathfinding.findPath(currentPos, candidatePos, gameState);
+      // if (!path || path.length === 0) continue;
+
       const adjustedScore = this.computeAdjustedScore(evaluation, distance);
 
       // Reject unsafe candidates
-      if (adjustedScore < 0) continue;
+      // if (adjustedScore < 0) continue;
 
       // Add to valid candidates list
       validCandidates.push({
@@ -536,7 +543,7 @@ export class WallBreakerStrategy extends BaseStrategy {
     if (evaluation.safetyScore > 100) {
       score += 50; // safe bonus
     } else if (evaluation.safetyScore < 50) {
-      score -= 200; // unsafe penalty
+      score -= 1000; // unsafe penalty
     } else {
       score -= 100; // marginal safety
     }
@@ -590,14 +597,13 @@ export class WallBreakerStrategy extends BaseStrategy {
     }
 
     // Loại bỏ duplicate và sắp xếp theo khoảng cách
-    const uniqueCandidates = candidates.filter(
-      (pos, index, self) =>
-        index ===
-        self.findIndex(
-          (p) => Math.abs(p.x - pos.x) < 20 && Math.abs(p.y - pos.y) < 20
-        )
-    );
-
+    const seen = new Set<string>();
+    const uniqueCandidates = candidates.filter((pos) => {
+      const key = `${pos.x},${pos.y}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     return uniqueCandidates.sort(
       (a, b) =>
         manhattanDistance(snappedCenter, a) -
@@ -664,7 +670,7 @@ export class WallBreakerStrategy extends BaseStrategy {
 
     // NEW: Check if position is currently in danger zone
     if (isPositionInDangerZone(position, gameState)) {
-      safetyScore -= 80; // Heavy penalty
+      safetyScore -= 1000; // Heavy penalty
 
       // Find closest bomb threat
       const closestBomb = gameState.map.bombs.reduce((closest, bomb) => {
@@ -795,9 +801,6 @@ export class WallBreakerStrategy extends BaseStrategy {
       : null;
   }
 
-  /**
-   * NEW: Calculate dynamic priority based on game context
-   */
   private calculateDynamicPriority(
     bestPosition: {
       position: Position;
@@ -807,63 +810,51 @@ export class WallBreakerStrategy extends BaseStrategy {
     },
     gameState: GameState
   ): number {
-    let priority = this.priority; // Base 50
+    const base = this.priority; // 50
 
-    // Factor 1: Chest count bonus (more chests = higher priority)
-    const chestBonus = bestPosition.chestsCount * 5;
-    priority += chestBonus;
+    // VALUE: Chest count [0-30]
+    const chestsCount = bestPosition.chestsCount;
+    const value = Math.min(chestsCount * 10, 30); // 1 chest = 10, max 30
 
-    // Factor 2: Safety bonus/penalty
-    const safetyAdjustment = Math.floor((bestPosition.safetyScore - 50) / 10);
-    priority += safetyAdjustment;
+    // DISTANCE: Travel distance [-10 to 0]
+    const travelDistance = manhattanDistance(
+      gameState.currentBot.position,
+      bestPosition.position
+    );
+    const maxDistance = 400; // 10 cells
+    const distanceRatio = Math.min(travelDistance / maxDistance, 1);
+    const distance = -Math.floor(distanceRatio * 10); // [0 to -10]
 
-    // Factor 3: Urgency (few chests left on map)
-    const totalChests = (gameState.map.chests || []).length;
-    let urgencyBonus = 0;
-    if (totalChests <= 3) {
-      urgencyBonus = 15; // High urgency
-    } else if (totalChests <= 10) {
-      urgencyBonus = 5; // Medium urgency
-    }
-    priority += urgencyBonus;
+    // URGENCY: Chest scarcity [0-20]
+    const totalChests = gameState.map.chests.length;
+    const urgency = totalChests <= 3 ? 20 : totalChests <= 10 ? 10 : 0;
 
-    // Factor 4: Competition (enemies nearby)
-    const nearbyEnemies = gameState.enemies.filter((e) => {
-      const dist = manhattanDistance(gameState.currentBot.position, e.position);
-      return e.isAlive && dist < 200; // Within 5 cells
-    }).length;
-    const competitionBonus = nearbyEnemies * 3;
-    priority += competitionBonus;
+    // SAFETY: Escape safety [-20 to +10]
+    const safetyScore = bestPosition.safetyScore || 50;
+    const safety = Math.floor((safetyScore - 50) / 5); // [-10 to +10]
 
-    // Factor 5: Penalty if currently in danger zone
-    let dangerPenalty = 0;
+    // PENALTY: Current danger + competition [-30 to 0]
+    let penalty = 0;
+
+    // In danger zone: -20
     if (isPositionInDangerZone(gameState.currentBot.position, gameState)) {
-      dangerPenalty = -30; // Lower priority if we need to escape first
-      priority += dangerPenalty;
+      penalty -= 20;
     }
 
-    console.log(`📊 Dynamic priority calculation:`);
-    console.log(`   Base priority: ${this.priority}`);
-    console.log(
-      `   + Chest bonus: ${chestBonus} (${bestPosition.chestsCount} chests)`
-    );
-    console.log(
-      `   + Safety adjustment: ${safetyAdjustment} (safety: ${bestPosition.safetyScore})`
-    );
-    console.log(
-      `   + Urgency bonus: ${urgencyBonus} (${totalChests} chests left)`
-    );
-    console.log(
-      `   + Competition bonus: ${competitionBonus} (${nearbyEnemies} enemies nearby)`
-    );
-    if (dangerPenalty !== 0) {
-      console.log(`   + Danger penalty: ${dangerPenalty}`);
+    // No bombs available: -10
+    if (gameState.currentBot.bombCount <= 0) {
+      penalty -= 10;
     }
-    console.log(`   = Final priority: ${priority}`);
 
-    return priority;
+    return calculatePriority({
+      base,
+      value,
+      distance,
+      urgency,
+      safety,
+      penalty,
+    });
   }
-
   /**
    * NEW: Count number of escape routes from a position
    */
@@ -933,7 +924,6 @@ export class WallBreakerStrategy extends BaseStrategy {
     // Use existing canEscapeFromBomb but with FULL bomb context
     const canEscape = canEscapeFromBomb(
       snappedBombPos,
-      simulatedBomb,
       tempGameState // Use temp state with all bombs
     );
 

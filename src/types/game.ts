@@ -43,6 +43,12 @@ export enum BotAction {
   STOP = "STOP",
 }
 
+export enum BotTargetAction {
+  MOVE = "MOVE",
+  BOMB = "BOMB",
+  STOP = "STOP",
+}
+
 // Bomber data structure from server
 export interface Bomber {
   x: number;

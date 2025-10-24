@@ -1,21 +1,13 @@
 import { BaseStrategy } from "./baseStrategy";
-import {
-  GameState,
-  BotDecision,
-  BotAction,
-  Direction,
-  ItemType,
-} from "../types";
+import { GameState, BotDecision, BotAction, ItemType, Item } from "../types";
 import {
   manhattanDistance,
   isPositionSafe,
+  pixelToCell,
+  Pathfinding,
   getDirectionToTarget,
-  getPositionInDirection,
-  // Use unified collision system
-  canMoveTo,
-  isBlocked,
-  PLAYER_SIZE,
 } from "../utils";
+import { calculatePriority } from "./calculatePriority";
 
 /**
  * Chiến thuật thu thập vật phẩm
@@ -60,23 +52,78 @@ export class CollectStrategy extends BaseStrategy {
     if (!bestItem || bestScore < 5) {
       return null;
     }
-
     // Tìm đường đi đến vật phẩm
     const direction = getDirectionToTarget(currentPos, bestItem.position);
-    const nextPos = getPositionInDirection(currentPos, direction);
 
-    // Kiểm tra có thể di chuyển đến vị trí tiếp theo không
-    if (!canMoveTo(nextPos, gameState)) {
+    // Tìm đường đi đến vật phẩm bằng Pathfinder
+    const path = Pathfinding.findPath(
+      pixelToCell(currentPos),
+      pixelToCell(bestItem.position),
+      gameState
+    );
+
+    if (!path || path.length === 0) {
+      console.log(
+        `🎁 CollectStrategy: Không tìm thấy đường đi đến ${bestItem.type}`
+      );
       return null;
     }
 
+    // ✅ NORMALIZED PRIORITY
+    const priority = this.calculateCollectPriority(
+      bestItem,
+      bestDistance,
+      gameState
+    );
+
     return this.createDecision(
       BotAction.MOVE,
-      this.priority + Math.floor(bestScore),
-      `Thu thập vật phẩm ${bestItem.type} (khoảng cách: ${bestDistance})`,
+      priority,
+      `Collecting item ${bestItem.type} (distance: ${bestDistance})`,
       direction,
-      bestItem.position
+      bestItem.position,
+      path
     );
+  }
+
+  private calculateCollectPriority(
+    item: Item,
+    distance: number,
+    gameState: GameState
+  ): number {
+    const base = this.priority; // 60
+
+    // VALUE: Item importance [0-30]
+    const itemValue = this.getItemScore(item.type, gameState);
+    const value = Math.floor((itemValue / 100) * 30); // Normalize to [0-30]
+
+    // DISTANCE: Distance penalty [-10 to +10]
+    // Close items (+10), far items (-10)
+    const maxDistance = 400; // 10 cells
+    const distanceRatio = Math.min(distance / maxDistance, 1);
+    const distanceScore = Math.floor(10 - distanceRatio * 20); // [10 to -10]
+
+    // URGENCY: Competition [0-20]
+    const nearbyEnemies = gameState.enemies.filter(
+      (e) => manhattanDistance(e.position, item.position) < distance
+    ).length;
+    const urgency = Math.min(nearbyEnemies * 10, 20);
+
+    // SAFETY: Position safety [-20 to +10]
+    const isSafe = isPositionSafe(item.position, gameState);
+    const safety = isSafe ? 0 : -20;
+
+    // PENALTY: Already have similar items [-30 to 0]
+    const penalty = this.getItemPenalty(item.type, gameState);
+
+    return calculatePriority({
+      base,
+      value: value,
+      distance: distanceScore,
+      urgency,
+      safety,
+      penalty,
+    });
   }
 
   /**
@@ -100,6 +147,19 @@ export class CollectStrategy extends BaseStrategy {
 
       default:
         return 10;
+    }
+  }
+
+  private getItemPenalty(type: ItemType, gameState: GameState): number {
+    const bot = gameState.currentBot;
+
+    switch (type) {
+      case ItemType.SPEED:
+        return bot.speed >= 3 ? -20 : 0; // Already max speed
+      case ItemType.BOMB_COUNT:
+        return bot.bombCount >= 5 ? -15 : 0; // Too many bombs
+      default:
+        return 0;
     }
   }
 }

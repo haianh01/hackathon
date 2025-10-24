@@ -389,19 +389,15 @@ export class Pathfinding {
 }
 
 /**
- *  Compute explosion cells with caching
- */
-/**
- * Tính toàn bộ các ô sẽ bị ảnh hưởng bởi bom trên bản đồ.
- * Bao gồm cả chính ô đặt bom.
+ * ✅ Compute explosion cells for ALL bombs on map
+ * @returns Set of unsafe cell keys
  */
 export function computeExplosionCells(
-  bomb: Bomb,
-  gameState: GameState
+  gameState: GameState // ← Chỉ cần gameState
 ): Set<string> {
   const unsafe = new Set<string>();
 
-  // Precompute tường và chest
+  // Precompute walls and chests
   const solidWalls = new Set<string>();
   const destructibles = new Set<string>();
 
@@ -415,7 +411,6 @@ export function computeExplosionCells(
     destructibles.add(createCellIndexKey(cell));
   }
 
-  // 4 hướng nổ: lên, xuống, trái, phải
   const directions = [
     { x: 0, y: -1 }, // UP
     { x: 0, y: 1 }, // DOWN
@@ -426,12 +421,15 @@ export function computeExplosionCells(
   const maxCellX = Math.floor(gameState.map.width / CELL_SIZE);
   const maxCellY = Math.floor(gameState.map.height / CELL_SIZE);
 
-  // 🔥 Lặp qua tất cả bom trên bản đồ
+  // ✅ Loop through ALL bombs on map
   for (const bomb of gameState.map.bombs) {
     const bombCell = pixelToCell(bomb.position);
     const bombKey = createCellIndexKey(bombCell);
-    unsafe.add(bombKey); // ô trung tâm luôn nguy hiểm
 
+    // Center cell always unsafe
+    unsafe.add(bombKey);
+
+    // Check explosion in 4 directions
     for (const dir of directions) {
       for (let i = 1; i <= (bomb.flameRange || 2); i++) {
         const currentCell = {
@@ -439,23 +437,30 @@ export function computeExplosionCells(
           y: bombCell.y + dir.y * i,
         };
 
-        // Giới hạn bản đồ
+        // Bounds check
         if (
           currentCell.x < 0 ||
           currentCell.x >= maxCellX ||
           currentCell.y < 0 ||
           currentCell.y >= maxCellY
-        )
+        ) {
           break;
+        }
 
         const cellKey = createCellIndexKey(currentCell);
 
-        // Nếu là tường đặc → dừng tia nổ
-        if (solidWalls.has(cellKey)) break;
+        // Solid wall blocks explosion
+        if (solidWalls.has(cellKey)) {
+          break;
+        }
 
-        // Nếu là chest → bị phá hủy, dừng luôn sau đó
+        // Add unsafe cell
         unsafe.add(cellKey);
-        if (destructibles.has(cellKey)) break;
+
+        // Chest blocks explosion after being destroyed
+        if (destructibles.has(cellKey)) {
+          break;
+        }
       }
     }
   }
@@ -464,18 +469,22 @@ export function computeExplosionCells(
 }
 
 /**
- *  Check if bot can escape from bomb
+ * ✅ Check if can escape considering ALL bombs
  */
-export function canEscapeFromBomb( // ĐỔI TÊN HÀM
+export function canEscapeFromBomb(
   startPos: Position,
-  bomb: Bomb,
-  gameState: GameState
+  gameState: GameState // ← Không cần bomb parameter
 ): boolean {
   const startCell = pixelToCell(startPos);
-  const unsafe = computeExplosionCells(bomb, gameState);
+
+  // ✅ Get explosion info for ALL bombs
+  const explosionInfo = computeExplosionInfo(gameState);
+  const { unsafeCells, cellTimeRemaining } = explosionInfo;
+
   const startKey = createCellIndexKey(startCell);
 
-  if (!unsafe.has(startKey)) {
+  // Already safe
+  if (!unsafeCells.has(startKey)) {
     return true;
   }
 
@@ -487,7 +496,6 @@ export function canEscapeFromBomb( // ĐỔI TÊN HÀM
 
   const botSpeed = gameState.currentBot.speed || 1;
   const pixelsPerMove = botSpeed * MOVE_STEP_SIZE;
-  const timeRemaining = bomb.timeRemaining || 5000;
   const pixelsPerSecond = (1000 / MOVE_INTERVAL_MS) * pixelsPerMove;
 
   const mapDims = getMapCellDimensions(
@@ -517,14 +525,13 @@ export function canEscapeFromBomb( // ĐỔI TÊN HÀM
 
       if (visited.has(key)) continue;
 
-      // Bounds check
+      // Validation
       if (
         !isWithinCellBounds(nextCell, gameState.map.width, gameState.map.height)
       ) {
         continue;
       }
 
-      // Blocking check
       const pixelPos = cellToPixelCorner(nextCell);
       if (isBlocked(pixelPos, gameState, WALL_SIZE)) {
         continue;
@@ -536,13 +543,16 @@ export function canEscapeFromBomb( // ĐỔI TÊN HÀM
       const distancePx = nextSteps * CELL_SIZE;
       const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
 
-      // Check if unsafe and can't pass in time
-      if (unsafe.has(key) && arrivalTimeMs >= timeRemaining) {
-        continue;
-      }
+      // ✅ Check with specific bomb time for this cell
+      if (unsafeCells.has(key)) {
+        const cellExplosionTime = cellTimeRemaining.get(key) ?? 5000;
 
-      // Found safe cell
-      if (!unsafe.has(key) && arrivalTimeMs <= timeRemaining) {
+        // Can't pass through
+        if (arrivalTimeMs >= cellExplosionTime) {
+          continue;
+        }
+      } else {
+        // ✅ Found safe cell!
         return true;
       }
 
@@ -554,28 +564,124 @@ export function canEscapeFromBomb( // ĐỔI TÊN HÀM
 }
 
 /**
- *  Find escape path with proper time calculations
+ * ✅ Compute explosion information for ALL bombs
+ * Returns a Map with cell key → minimum time remaining
+ */
+export interface ExplosionInfo {
+  unsafeCells: Set<string>;
+  cellTimeRemaining: Map<string, number>; // cell key → min time
+}
+
+export function computeExplosionInfo(gameState: GameState): ExplosionInfo {
+  const unsafeCells = new Set<string>();
+  const cellTimeRemaining = new Map<string, number>();
+
+  // Precompute obstacles
+  const solidWalls = new Set<string>();
+  const destructibles = new Set<string>();
+
+  for (const wall of gameState.map.walls) {
+    const cell = pixelToCell(wall.position);
+    solidWalls.add(createCellIndexKey(cell));
+  }
+
+  for (const chest of gameState.map.chests || []) {
+    const cell = pixelToCell(chest.position);
+    destructibles.add(createCellIndexKey(cell));
+  }
+
+  const directions = [
+    { x: 0, y: -1 },
+    { x: 0, y: 1 },
+    { x: -1, y: 0 },
+    { x: 1, y: 0 },
+  ];
+
+  const maxCellX = Math.floor(gameState.map.width / CELL_SIZE);
+  const maxCellY = Math.floor(gameState.map.height / CELL_SIZE);
+
+  // ✅ Process ALL bombs
+  for (const bomb of gameState.map.bombs) {
+    const bombCell = pixelToCell(bomb.position);
+    const bombKey = createCellIndexKey(bombCell);
+    const bombTime = bomb.timeRemaining || 5000;
+
+    // Update center cell
+    unsafeCells.add(bombKey);
+
+    // Track minimum time for this cell
+    const currentTime = cellTimeRemaining.get(bombKey) ?? Infinity;
+    cellTimeRemaining.set(bombKey, Math.min(currentTime, bombTime));
+
+    // Check 4 directions
+    for (const dir of directions) {
+      for (let i = 1; i <= (bomb.flameRange || 2); i++) {
+        const currentCell = {
+          x: bombCell.x + dir.x * i,
+          y: bombCell.y + dir.y * i,
+        };
+
+        // Bounds check
+        if (
+          currentCell.x < 0 ||
+          currentCell.x >= maxCellX ||
+          currentCell.y < 0 ||
+          currentCell.y >= maxCellY
+        ) {
+          break;
+        }
+
+        const cellKey = createCellIndexKey(currentCell);
+
+        // Solid wall blocks
+        if (solidWalls.has(cellKey)) {
+          break;
+        }
+
+        // Mark as unsafe
+        unsafeCells.add(cellKey);
+
+        // Update minimum time
+        const currentTime = cellTimeRemaining.get(cellKey) ?? Infinity;
+        cellTimeRemaining.set(cellKey, Math.min(currentTime, bombTime));
+
+        // Chest blocks after destroy
+        if (destructibles.has(cellKey)) {
+          break;
+        }
+      }
+    }
+  }
+
+  return { unsafeCells, cellTimeRemaining };
+}
+
+/**
+ * ✅ Find escape path considering ALL bombs
  */
 export function findEscapePath(
   startPos: Position,
-  bomb: Bomb,
-  gameState: GameState
+  gameState: GameState // ← Không cần bomb parameter nữa!
 ): EscapePathResult {
   const startCell = pixelToCell(startPos);
 
-  const unsafe = computeExplosionCells(bomb, gameState);
+  // ✅ Get explosion info for ALL bombs
+  const explosionInfo = computeExplosionInfo(gameState);
+  const { unsafeCells, cellTimeRemaining } = explosionInfo;
 
   const startKey = createCellIndexKey(startCell);
 
-  if (!unsafe.has(startKey)) {
-    // return {
-    //   nextStep: startPos, // ✅ Already at safe position (pixel)
-    //   target: startPos, // ✅
-    //   path: [startPos], // ✅
-    //   direction: Direction.STOP,
-    // };
+  // Check if already safe
+  if (!unsafeCells.has(startKey)) {
+    return {
+      nextStep: startPos,
+      target: startPos,
+      path: [startPos],
+      direction: Direction.STOP,
+    };
   }
 
+  // BFS search
   const queue: { cell: Position; steps: number }[] = [
     { cell: startCell, steps: 0 },
   ];
@@ -584,7 +690,6 @@ export function findEscapePath(
 
   const botSpeed = gameState.currentBot.speed || 1;
   const pixelsPerMove = botSpeed * MOVE_STEP_SIZE;
-  const timeRemaining = bomb.timeRemaining || 5000;
   const pixelsPerSecond = (1000 / MOVE_INTERVAL_MS) * pixelsPerMove;
 
   const mapDims = getMapCellDimensions(
@@ -615,7 +720,7 @@ export function findEscapePath(
 
       if (visited.has(key)) continue;
 
-      // Validation checks
+      // Validation
       if (
         !isWithinCellBounds(nextCell, gameState.map.width, gameState.map.height)
       ) {
@@ -631,29 +736,35 @@ export function findEscapePath(
       parentMap.set(key, createCellIndexKey(node.cell));
 
       const nextSteps = node.steps + 1;
-      const distancePx = nextSteps * CELL_SIZE; // Giống như canEscapeFromBomb
+      const distancePx = nextSteps * CELL_SIZE;
       const arrivalTimeMs = (distancePx / pixelsPerSecond) * 1000;
-      // Skip unsafe cells that can't be passed in time
-      if (unsafe.has(key) && arrivalTimeMs >= timeRemaining) {
-        continue;
-      }
 
-      // Found safe cell reachable in time
-      if (!unsafe.has(key) && arrivalTimeMs <= timeRemaining) {
+      // ✅ Check against specific bomb time for this cell
+      if (unsafeCells.has(key)) {
+        const cellExplosionTime = cellTimeRemaining.get(key) ?? 5000;
+
+        // Can't pass through in time
+        if (arrivalTimeMs >= cellExplosionTime) {
+          continue;
+        }
+
+        // Can pass through, continue searching
+      } else {
+        // ✅ Found safe cell!
         const fullPath = reconstructFullPath(parentMap, startCell, nextCell);
 
         if (fullPath.length === 0) return null;
 
-        const pixelPath: Position[] = [];
+        const pixelPath: Position[] = []; // ✅ Fixed!
         for (let i = 1; i < fullPath.length; i++) {
           pixelPath.push(cellToPixelCenter(fullPath[i]!));
         }
 
-        const nextTarget = pixelPath[0]!;
-        const direction = getDirectionToTarget(startPos, nextTarget);
+        const nextTarget = pixelPath[1];
+        const direction = getDirectionToTarget(startPos, nextTarget!);
 
         return {
-          nextStep: cellToPixelCenter(pixelPath[0]!),
+          nextStep: nextTarget!,
           target: pixelPath[pixelPath.length - 1]!,
           path: pixelPath,
           direction,

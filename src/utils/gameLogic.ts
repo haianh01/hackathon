@@ -48,7 +48,7 @@ function getCachedExplosionCells(
     return cached.cells;
   }
 
-  const cells = computeExplosionCells(bomb, gameState);
+  const cells = computeExplosionCells(gameState);
   explosionCache.set(bombKey, {
     bombId: bombKey,
     cells,

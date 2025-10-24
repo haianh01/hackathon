@@ -8,6 +8,7 @@ import {
   Direction,
   GameState,
   BombExplodeEvent,
+  BotTargetAction,
 } from "./types";
 import { SocketConnection } from "./connection/socketConnection";
 import { angleBetween, getDirectionFromPathStep } from "./utils/position";
@@ -55,7 +56,7 @@ interface PathState {
   waypointReachedFlag?: boolean;
   targetPixelPosition: Position | null;
   isMovingToWaypoint: boolean;
-
+  pathReason: string | null;
   stuckTicks: number;
   lastPixelPosition: Position | null;
 }
@@ -111,7 +112,15 @@ export class BomberManBot {
     isMovingToWaypoint: false,
     stuckTicks: 0,
     lastPixelPosition: null,
+    pathReason: null,
   };
+
+  private BotTargetActionBomB = [
+    "Executing planned bomb",
+    "Following bomb placement path",
+    "Immediate bomb",
+    "Starting bomb placement path",
+  ];
 
   private movementState: MovementState = {
     lastPosition: null,
@@ -400,7 +409,7 @@ export class BomberManBot {
         console.log(
           `🏃 Continue to waypoint [${this.pathState.currentWaypointIndex}]: (${target.x}, ${target.y})`
         );
-        return;
+        // return;
       }
     }
 
@@ -420,6 +429,7 @@ export class BomberManBot {
     console.log("🧠 Calculating next waypoint...");
 
     const decision = this.ai.makeDecision(gameState);
+    this.pathState.pathReason = decision.action;
 
     if (!decision || !decision.target) {
       console.log("❌ No decision from AI");
@@ -429,8 +439,7 @@ export class BomberManBot {
     const fullPath = decision.path;
     if (!fullPath) {
       console.log("❌ No path from AI");
-      this.handleEndOfPath(decision);
-
+      // this.handleEndOfPath(decision);
       return;
     }
 
@@ -498,7 +507,7 @@ export class BomberManBot {
       target: nextWaypoint,
       reason: `Waypoint [${nextWaypointIndex}/${fullPath.length - 1}]`,
       path: [...fullPath],
-      priority: 1000,
+      priority: 10,
     } as BotDecision;
 
     this.executeAction(moveDecision);
@@ -542,16 +551,16 @@ export class BomberManBot {
     }
 
     // ✅ Check if at bomb target
-    const currentBot = this.gameEngine.getCurrentBot();
-    if (currentBot && decision.target) {
-      const distance = getDistance(currentBot.position, decision.target);
+    // const currentBot = this.gameEngine.getCurrentBot();
+    // if (currentBot && decision.target) {
+    //   const isFullyIn = isBotFullyInCell(currentBot.position, decision.target);
 
-      if (distance <= 20) {
-        console.log("💣 At bomb target - placing bomb");
-        this.handlePlaceBomb(decision);
-        return;
-      }
-    }
+    //   if (isFullyIn) {
+    //     console.log("💣 At bomb target - placing bomb");
+    //     this.handlePlaceBomb(decision);
+    //     return;
+    //   }
+    // }
 
     console.log("✅ Path completed, no bomb action");
     this.clearPath();
@@ -600,12 +609,7 @@ export class BomberManBot {
         this.pathState!.currentPath![this.pathState.currentWaypointIndex!]!
       )
     );
-    console.log(
-      "%c🤪 ~601 [] -> direction : ",
-      "color: #ba298d",
-      direction,
-      this.pathState!.currentPath!.length
-    );
+
     if (
       this.pathState!.currentPath!.length &&
       !isBotFullyInCell(currentBot.position, pixelToCell(currentBot.position))
@@ -649,7 +653,7 @@ export class BomberManBot {
     }
   }
 
-  private handlePlaceBomb(decision: BotDecision): void {
+  private handlePlaceBomb(decision?: BotDecision): void {
     const currentBot = this.gameEngine.getCurrentBot();
     if (!currentBot) return;
 
@@ -708,6 +712,7 @@ export class BomberManBot {
       this.pathState.pathTarget = escapeDecision.target;
       this.pathState.currentPath = escapeDecision.path!;
       this.pathState.currentWaypointIndex = 0;
+      this.pathState.targetPixelPosition = escapeDecision.target;
       console.log(
         `🛤️ Emergency path: ${this.pathState.currentPath!.length} steps`
       );
@@ -716,28 +721,85 @@ export class BomberManBot {
     this.executeAction(escapeDecision);
   }
 
+  // Đặt biến này ra ngoài hàm để dễ dùng
+  isBombAction = this.BotTargetActionBomB.some(
+    (reason) =>
+      this.pathState.pathReason && this.pathState.pathReason.includes(reason)
+  );
+
   private checkCellReached(currentPos: Position): void {
     if (
       !this.pathState.isMovingToWaypoint ||
-      !this.pathState.targetPixelPosition
+      !this.pathState.targetPixelPosition ||
+      !this.pathState.currentPath
     ) {
       return;
     }
 
+    const currentCell = pixelToCell(currentPos);
     const targetCell = pixelToCell(this.pathState.targetPixelPosition);
+
+    const currentIndex = this.pathState.currentWaypointIndex;
+    const isFinalWaypoint =
+      currentIndex === this.pathState.currentPath.length - 1;
+
+    const hasEnteredCell =
+      currentCell.x === targetCell.x && currentCell.y === targetCell.y;
+
     const isFullyIn = isBotFullyInCell(currentPos, targetCell);
 
-    if (isFullyIn) {
-      console.log(`✅ Reached cell [${targetCell.x}, ${targetCell.y}]`);
+    const isTargetingBomb = this.BotTargetActionBomB.some(
+      (reason) =>
+        this.pathState.pathReason && this.pathState.pathReason.includes(reason)
+    );
 
-      // ✅ ALWAYS stop when reaching waypoint
+    let isReached = false;
+
+    // --- BƯỚC 1: XÁC ĐỊNH ĐIỀU KIỆN DỪNG (isReached) ---
+
+    if (!isFinalWaypoint) {
+      // TRƯỜNG HỢP 1: WAYPOINT TRUNG GIAN (luôn là MOVE)
+      // Yêu cầu: Chỉ cần chạm 1px để nhanh chóng đi tiếp
+      isReached = hasEnteredCell;
+    } else {
+      // TRƯỜNG HỢP 2: MỤC TIÊU CUỐI CÙNG
+
+      if (isTargetingBomb) {
+        // Yêu cầu: Đặt bom chỉ cần chạm 1px
+        isReached = hasEnteredCell;
+      } else {
+        // Mục tiêu MOVE/STOP (Thoát hiểm hoặc Dừng chờ an toàn)
+        // Yêu cầu: Cần căn giữa (Fully In) để đảm bảo an toàn/căn chỉnh.
+        isReached = isFullyIn;
+      }
+    }
+
+    // --- BƯỚC 2: THỰC THI HÀNH ĐỘNG DỪNG ---
+
+    if (isReached) {
+      console.log(
+        `✅ ${isFinalWaypoint ? "Final" : "Waypoint"} reached [${
+          targetCell.x
+        }, ${targetCell.y}]. Condition: ${
+          isTargetingBomb ? "1px (Bomb)" : "Fully In (Move/Escape)"
+        }`
+      );
+
+      // ✅ Dừng di chuyển
       this.socketConnection.stopContinuousMove();
 
-      // ✅ Set flag để tick handle
+      // ✅ Set cờ để tick logic chính xử lý:
+      // 1. Tăng currentWaypointIndex
+      // 2. Kích hoạt handleEndOfPath (nếu là final waypoint)
       this.pathState.waypointReachedFlag = true;
 
+      // Xóa lý do hành động sau khi đạt waypoint cuối cùng (để buộc tính toán lại)
+      if (isFinalWaypoint) {
+        this.pathState.pathReason = null;
+      }
+
       console.log(
-        "🔄 Cell reached, will recalculate on next tick",
+        "🔄 Cell reached, will recalculate on next tick.",
         this.pathState
       );
     }

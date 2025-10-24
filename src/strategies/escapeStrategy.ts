@@ -378,7 +378,7 @@ export class EscapeStrategy extends BaseStrategy {
       JSON.stringify(gameState.map.bombs)
     );
     const dangerousBombs = gameState.map.bombs
-      .filter((b) => isPositionInDangerZone(b.position, gameState)) // Giả định hàm này kiểm tra nguy hiểm từ 1 bomb
+      .filter(() => isPositionInDangerZone(currentPos, gameState)) // Giả định hàm này kiểm tra nguy hiểm từ 1 bomb
       .sort((a, b) => a.timeRemaining - b.timeRemaining); // Ưu tiên bom sắp nổ
 
     const dangerousBomb = dangerousBombs[0];
@@ -428,7 +428,7 @@ export class EscapeStrategy extends BaseStrategy {
     // *** Sửa đổi chính ở đây: Gọi BFS với thông tin bom và gameState ***
     // Giả định hàm findEscapePath mới được sửa đổi để nhận Bomb làm tham số
     // Note: Cần đảm bảo hàm findEscapePath hỗ trợ tùy chọn 'allowOwnBomb'
-    escapeResult = findEscapePath(currentPos, dangerousBomb, gameState);
+    escapeResult = findEscapePath(currentPos, gameState);
     console.log(
       "%c🤪 ~ file: c:UserslehaihackathonsrcstrategiesescapeStrategy.ts:433 [] -> escapeResult : ",
       "color: #6dba40",
@@ -776,111 +776,6 @@ export class EscapeStrategy extends BaseStrategy {
     }
 
     return null;
-  }
-
-  /**
-   * Finds emergency moves with RELAXED threshold for tight spaces.
-   * Accepts ANY direction that provides some escape room, even if blocked soon.
-   */
-  private findEmergencyMovesRelaxed(
-    gameState: GameState,
-    currentPos: Position,
-    directionsToCheck: Array<{
-      primary: Direction;
-      offset: { dx: number; dy: number };
-    }>
-  ): Array<{
-    direction: Direction;
-    score: number;
-    newPos: Position;
-    path: Position[];
-  }> {
-    const relaxedMoves: Array<{
-      direction: Direction;
-      score: number;
-      newPos: Position;
-      path: Position[];
-    }> = [];
-
-    const EMERGENCY_STEP = 3;
-    const LOOKAHEAD_STEPS = 30;
-
-    for (const dirInfo of directionsToCheck) {
-      const newPos = {
-        x: currentPos.x + dirInfo.offset.dx * EMERGENCY_STEP,
-        y: currentPos.y + dirInfo.offset.dy * EMERGENCY_STEP,
-      };
-
-      // Bounds check
-      if (
-        newPos.x < EDGE_SAFETY_MARGIN ||
-        newPos.x >= gameState.map.width - EDGE_SAFETY_MARGIN ||
-        newPos.y < EDGE_SAFETY_MARGIN ||
-        newPos.y >= gameState.map.height - EDGE_SAFETY_MARGIN
-      ) {
-        continue;
-      }
-
-      // Check immediate position ONLY - accept even if blocked soon
-      if (!canMoveTo(newPos, gameState)) {
-        continue;
-      }
-
-      // Calculate how many steps before blocked (same as before)
-      let stepsBeforeBlocked = 1;
-      let finalSafePos = newPos;
-
-      for (let step = 2; step <= LOOKAHEAD_STEPS; step++) {
-        const futurePos = {
-          x: currentPos.x + dirInfo.offset.dx * EMERGENCY_STEP * step,
-          y: currentPos.y + dirInfo.offset.dy * EMERGENCY_STEP * step,
-        };
-
-        if (
-          futurePos.x < EDGE_SAFETY_MARGIN ||
-          futurePos.x >= gameState.map.width - EDGE_SAFETY_MARGIN ||
-          futurePos.y < EDGE_SAFETY_MARGIN ||
-          futurePos.y >= gameState.map.height - EDGE_SAFETY_MARGIN
-        ) {
-          break;
-        }
-
-        if (!canMoveTo(futurePos, gameState)) {
-          break;
-        }
-
-        stepsBeforeBlocked = step;
-        finalSafePos = futurePos;
-      }
-
-      // RELAXED: Accept ANY valid direction, even if blocked in 1-9 steps
-      const baseScore = this.calculateEmergencyScore(finalSafePos, gameState);
-      const spaceBonus = Math.min(stepsBeforeBlocked * 5, 150);
-      const finalScore = baseScore + spaceBonus;
-
-      // Build escape path
-      const escapePath: Position[] = [currentPos];
-      for (let step = 1; step <= stepsBeforeBlocked; step++) {
-        const stepPos = {
-          x: currentPos.x + dirInfo.offset.dx * EMERGENCY_STEP * step,
-          y: currentPos.y + dirInfo.offset.dy * EMERGENCY_STEP * step,
-        };
-        escapePath.push(stepPos);
-      }
-
-      console.log(
-        `📊 RELAXED Direction ${dirInfo.primary}: Score ${finalScore} (base: ${baseScore} + space: ${spaceBonus}), steps: ${stepsBeforeBlocked}`
-      );
-
-      relaxedMoves.push({
-        direction: dirInfo.primary,
-        score: finalScore,
-        newPos: finalSafePos,
-        path: escapePath,
-      });
-    }
-
-    return relaxedMoves;
   }
 
   /**
